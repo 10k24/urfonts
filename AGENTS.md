@@ -53,11 +53,32 @@ These are the facts the design rests on. Verify before changing any of them.
 - Fonts already inside a standard Fonts folder are enabled and disabled with
   `CTFontManagerEnableFontDescriptors`, not registration. Never touch them unless
   the user explicitly opts in.
-- A font already registered by another manager, or one with a duplicate
-  PostScript name, fails registration. Detect duplicates before registering.
+- Registering the same file twice fails with "The file has already been
+  registered in the specified scope." Treat that as success when the scope
+  matches; do not surface it as an error.
+- Duplicate PostScript names across different files are **not** reliably
+  rejected. A second file with the same PostScript name registered cleanly in
+  the Phase 0 spike. fontd will not solve conflicts for us: detect them and warn
+  before activating both.
+- Registration is per-file: about 2 ms per font once warm (1,000 fonts in about
+  2 s), and the first call in a process pays a fontd start cost. Measure with
+  `scripts/register-spike.sh`; do not copy numbers from here.
 - Running apps refresh their font menus on their own schedule. Activate then
   launch is reliable. Activate into a running app may need a relaunch. This is
   app behavior, documented in the README, not something we work around.
+- `ActivationEngine` is the only writer to fontd. The unit of registration is
+  the file path; the journal stores one row per face. Every success is read back
+  with `CTFontManagerGetScopeForURL`; a registration that fontd does not confirm
+  is a failure, never an optimistic success.
+- Reconcile at launch drops journal rows whose scope no longer matches fontd. It
+  never re-registers anything by itself.
+- Re-parsing a changed file must preserve activation rows: face IDs are stable,
+  so capture them before the face delete and reinsert after the insert.
+- Fonts under `/System/Library/Fonts`, `/Library/Fonts` or
+  `~/Library/Fonts` are installed, not ours. Skip them in the engine and show a
+  lock in the UI; never unregister them.
+- Toggling is family-level in the UI. Activating a family registers each of its
+  files once and journals every face.
 - Preview never registers anything. `CTFontManagerCreateFontDescriptorsFromURL`
   plus `CTFontCreateWithFontDescriptor` is enough, and it is process-local.
   Variable fonts return one descriptor per named instance, so dedupe descriptors;
@@ -78,12 +99,37 @@ These are the facts the design rests on. Verify before changing any of them.
 - `FontLoader` is an actor with an LRU of about 256 `CTFont` objects, prefetch of
   the visible window plus 50 at bounded concurrency, and `F_RDADVISE` read-ahead.
   Skip prefetch above a scroll velocity threshold.
-- AppKit tables materialize every row when an accessibility client walks them.
-  Prefer the fixed-height lazy stack; keep the list container behind a small
-  protocol so the Phase 0 spike can swap in `NSTableView` if measurements demand
-  it.
+- Phase 0 measured both containers with `UrFonts --headless list-spike`. The
+  fixed-height SwiftUI lazy stack wins on p99 and keeps only visible rows alive.
+  `NSTableView` created row views for every jump and exceeded the frame budget.
+  Keep the list behind a small container type, but switch it only with a new
+  measurement, not an opinion. The spike does not capture SwiftUI's Core
+  Animation commit, so Phase 2 re-measures the real browser with signposts.
 - Grid tiles are drawn live; only a bounded `NSCache` of recent tiles is kept.
   No per-font preview files on disk by default.
+- The browser is `ScrollView` + `LazyVStack` with 64 pt rows and an `@State`
+  `LoadedFont` per visible row, loaded through `FontLoader.shared`. A row's
+  `.task(id:)` keys on path and face index only; size changes never reload.
+- `--headless browser` renders the real window offscreen, captures it with
+  `cacheDisplay`, and proves the process never activates. Use it to check layout
+  and glyph orientation; use a real window for frame timing. `--grid` and
+  `--query` select the other view and a search term.
+- Sidebar selection uses an enum, never an optional ID. A `nil` tag is SwiftUI's
+  "no selection" and makes the All Fonts row unselectable.
+- Detail content and the status bar are a pinned `VStack`. `safeAreaInset` lets
+  the footer float above short states such as no search results.
+- Preview size is derived from one cached CTFont per face with
+  `CTFontCreateCopyWithAttributes`. Never key a font load on point size: that
+  reopens the file and blanks the row on every slider tick.
+- Grid tiles fit the whole sample by shrinking it. List rows truncate with an
+  ellipsis. Both inset horizontally so italic overhangs survive.
+- The family sheet renders the large preview through `PreviewLine.drawFitted`
+  and derives axis variations with `CTFontDescriptorCreateCopyWithAttributes` +
+  `kCTFontVariationAttribute`. `CTFontCreateCopyWithAttributes` takes a
+  descriptor, not an attribute dictionary.
+- The glyph map comes from `CTFontCopyCharacterSet` over the face's own cmap,
+  scanning code points up to U+2FFFF and skipping controls. Nothing is indexed;
+  it runs when the sheet opens and works for inactive fonts.
 
 ### Indexing
 
@@ -97,6 +143,27 @@ These are the facts the design rests on. Verify before changing any of them.
 - Parse in parallel, bounded by `activeProcessorCount`, commit in one transaction.
 - Advanced metrics (x-height ratio, contrast, classification, embeddings) are a
   lazy background pass after the first index, cached, never blocking the browser.
+- The snapshot is the warm-launch cost. One joined query, positional row reads,
+  memoized family keys, lowercased search folds. Measure with
+  `urfonts-cli stats` before adding a cache.
+- Search covers family, styles and PostScript names. Family grouping uses a
+  case- and diacritic-folded key; search folds only lowercase because it runs on
+  every style and PostScript name.
+- Cloud file providers are not ordinary folders. Scanning an online-only
+  Dropbox root stalled indefinitely because reading a placeholder blocks on the
+  provider. Detect dataless files before opening them, skip and report them, and
+  never scan a provider root by default.
+- Paths must be canonical before they are compared. Foundation does not resolve
+  the `/var` firmlink (`resolvingSymlinksInPath` leaves it), but FileManager and
+  FSEvents return `/private/var/...`. The scanner uses `realpath`; without it
+  every watched-file delta looks like a new file.
+- The watcher reports `(root, changed path)` pairs. A file event triggers a
+  delta scan of those paths only; a directory event triggers a folder scan. A
+  five-minute sweep covers missed events. There is no event replay across app
+  launches: the launch rescan is the recovery path.
+- `urfonts-cli split-folder <old> <child>...` moves existing file rows into
+  subfolders by path prefix, then deletes the old folder. Use it instead of a
+  rescan when a provider root was indexed and should become its subfolders.
 
 ### Headless testing
 
@@ -124,7 +191,10 @@ These are the facts the design rests on. Verify before changing any of them.
 
 - SwiftPM executable plus `scripts/build-app.sh`. No Xcode project.
 - Bundle is `Ur Fonts.app`; executable is `UrFonts`; bundle ID
-  `com.10k24.urfonts`.
+  `com.10k24.urfonts`. The dev build script assembles `build/Ur Fonts.app` and
+  ad-hoc signs it; notarization comes at release.
+- A bare SwiftPM binary launches as `BackgroundOnly`; always package the bundle
+  before judging activation, menus or focus.
 - Developer ID, hardened runtime, notarized, Sparkle. One dependency for updates,
   one for the database.
 - Apache-2.0. MIT-derived code keeps its notice in `NOTICE`.

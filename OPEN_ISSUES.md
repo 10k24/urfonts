@@ -36,96 +36,46 @@ Locked decisions:
 
 ### Phase 0 - Spikes
 
-- **Fixture library.** Generate 23,000 tiny valid TTFs with unique family,
-  style and PostScript names. Gitignored, one script. Gate: the indexer walks
-  and parses the whole set without special cases.
-- **List container spike.** Two implementations of the same 23,000-row browser:
-  fixed-height `LazyVStack` and `NSTableView`, both with Canvas previews. Gate:
-  choose on measured p99 frame time and memory, record the number in AGENTS.md.
-- **Registration spike.** Register and unregister 1, 100 and 1,000 fonts from a
-  local folder, an external volume and a cloud-synced folder. Check reboot
-  persistence, scope readback, duplicate PostScript failure, and what Font Book
-  shows. Gate: every observed behavior and failure mode written into AGENTS.md.
-- **Headless harness spike.** App launched with `.prohibited` activation policy
-  drives one command through the production command seam, asserts
-  `NSApp.isActive == false`, writes a snapshot and exits with a status. Gate:
-  green on a CI macOS runner with no focus change.
-
-### Phase 1 - Core skeleton
-
-- **SwiftPM package.** Targets `UrFontsCore`, `UrFonts`, `urfonts-cli`. Swift 6.2,
-  strict concurrency, macOS 15.
-- **Schema and migrations.** GRDB, WAL, tables in AGENTS.md section Data model.
-- **SFNT reader.** `head`, `hhea`, `OS/2`, `name` (IDs 1, 2, 16, 17), `fvar`,
-  `STAT`, `cmap`, `GSUB` feature tags. Damaged tables return less, never crash.
-- **Scanner.** Enumerate with prefetched resource keys, stamp map, bounded
-  parallel parse, delta set, `parseVersion` for re-index.
-- **Catalog.** Immutable snapshot plus in-memory search index; views never read
-  files or query per row.
-- **CLI.** `urfonts-cli index`, `search`, `list`, `--json`.
-- **Headless.** `--headless index` and `--headless search`.
-
-Gate: cold index of 23,000 files under 30 s; warm launch reads zero font files;
-`swift test` green.
+- **CI harness.** Run `swift test`, the fixture generator and the headless
+  scenarios on a macOS runner. Gate: green with no focus change.
 
 ### Phase 2 - Browser
 
-- **App shell.** One main window, split view, sidebar, detail browser.
-- **Family-first list.** Fixed row height, style expansion, selection, keyboard
-  navigation, `.equatable()` rows.
-- **Search.** Token parser (`name:`, `tag:`, `wght:`, `script:`, `variable:`),
-  debounce, in-memory filter.
-- **Grid view.** Fixed tile size, same preview path.
-- **Preview rendering.** `CTFont` from file URL, LRU 256, prefetch visible +/-
-  50 at bounded concurrency, one `CTLine` per row in `Canvas`, manual ellipsis.
-- **Headless.** `bench scroll`, `bench search`, snapshot mode.
-
-Gate: scroll p99 frame under 8.3 ms; search under 16 ms; RSS under 300 MB and
-flat while scrolling.
+- **Preview prefetch.** Load the next viewport's fonts before they scroll in,
+  skip prefetch above a scroll velocity threshold, and verify the LRU stays
+  bounded while flinging through 26,000 faces.
+- **Slider debounce check.** Confirm the size slider is smooth with derived
+  fonts on the 25,000-face library in a real window; add debounce only if a
+  measurement shows it is needed.
 
 ### Phase 3 - Activation
 
-- **Registrar.** `FontRegistrar` protocol over CoreText; fake for tests.
-- **Engine actor.** Activate, deactivate, batch by family or collection,
-  temporary session scope, confirmation through `CTFontManagerGetScopeForURL`
-  and the registered-fonts-changed notification.
-- **Journal and reconcile.** Persist intent, reconcile at launch, repair moved
-  or missing files, deactivate all, undo.
-- **Conflicts.** Detect duplicate PostScript names before registering; explain
-  and block.
-- **Safety.** Never unregister or disable fonts under a standard Fonts folder
-  unless the user explicitly opts in.
-
-Gate: one family activated and confirmed under 250 ms; killing the app mid-batch
-leaves a reconcilable state; fake-registrar unit tests cover every transition.
+- **Activation UI.** Collection activation, temporary activation from the UI, an
+  "activate more than N families" warning, and deactivate-all.
+- **Activation feedback.** Show the conflict reason inline and offer reveal in
+  Finder for a failed file.
+- **Style activation from the page.** Keyboard focus and bulk style toggles.
 
 ### Phase 4 - Watcher
 
-- **FSEvents.** One stream per watched folder, `UseCFTypes | FileEvents |
-  WatchRoot | NoDefer`, persisted `lastEventId`, one-second debounce.
-- **Fallback sweep.** Every five minutes, and on mount notifications.
-- **Delta handling.** Rename, delete, offline volume, permission loss, 1,000-file
-  drop.
-
-Gate: single-file delta under 50 ms end to end; large drop does not trigger a
-full rescan.
+- **Cloud file providers.** Scanning an online-only Dropbox root stalled with no
+  output and no files committed. Detect dataless files before reading, skip them
+  with a report, and never let a scan hang on a provider.
+- **Event replay.** Events while the app was closed rely on the launch rescan
+  and the five-minute sweep. Persist and replay FSEvents IDs if a real folder
+  proves this is not enough.
+- **Watcher tests in CI.** The FSEvents test is opt-in; decide whether a CI
+  runner can own it reliably.
 
 ### Phase 5 - Viewing
 
-- **Preview settings.** Text, size, weight, line height, alignment, text color,
-  background color.
 - **Saved samples.** Named samples with their own text and colors; apply to list,
   grid and font page.
-- **Variable fonts.** Axis sliders and named instances; persist the chosen
-  instance per face.
-- **Font page.** Large editable sample, style table with per-style switches,
-  glyph map with sections and search, info panel.
+- **Glyph sections.** Group the map by script instead of one flat grid, and add
+  glyph names and SVG copy.
 - **Quick Look.** Space on selection, follows arrow keys.
 - **Script-aware samples.** Pick a Latin, CJK, Arabic or other sample from the
   font's coverage instead of showing tofu.
-
-Gate: golden snapshots; no clipped descenders; CJK and RTL fonts preview in their
-own script.
 
 ### Phase 6 - Organize
 
@@ -203,4 +153,86 @@ a font.
 
 ## Needs Verification
 
+- **Registration behavior.** Local folder, 1/100/1,000 files, persistence across
+  processes, double registration and duplicate PostScript behavior measured with
+  `scripts/register-spike.sh`. Still needs an external volume, a cloud-synced
+  folder, Font Book's view of a registered fixture, and a reboot.
+- **Real library.** The fixture library indexes and rescans well inside the
+  budget. The user's actual 23,000 fonts, with CFF, TTC and variable files, still
+  need a first run and a spot check of parsed names.
+- **Real window scroll.** The browser renders correctly offscreen and the list
+  container met its budget in the spike. First-paint and p99 frame time in a real
+  window, with preview fonts loading, still need signposts or Instruments.
+- **Bug batch after first launch.** All Fonts selection, grid fitting, slider
+  smoothness and the no-results footer were fixed and checked in headless
+  captures; each still needs one pass in the live window.
+- **Activation in the real app.** Click a library family, confirm another app
+  sees the font, quit and relaunch, and confirm the dot and journal survive.
+  No fontd integration test runs in CI.
+- **Watching a real folder.** Drop a font into a watched Dropbox folder and
+  confirm it appears within the debounce without a full rescan; check the
+  five-minute sweep after quitting and relaunching.
+
 ## Done
+
+- **Fixture library.** `FixtureGen` writes 23,000 valid TTFs with unique family,
+  style and PostScript names; CoreText and the checksum test read them back.
+- **Headless harness.** `--headless focus-check` proves the process never
+  activates while creating and backing a window; `--headless render` writes a
+  PNG. Artifacts land in `$TMPDIR/urfonts-headless/`.
+- **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
+  by `--headless list-spike`; the real browser re-measures in Phase 2.
+- **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`
+  for the default database path.
+- **Font parser.** Reads `head`, `hhea`, `OS/2`, `name`, `fvar`, handles `.ttc`
+  collections, and normalizes metrics by units per em. Damaged data throws, never
+  crashes.
+- **Scanner.** Prefetched resource keys, stamp-map delta detection, bounded
+  parallel parse, removed files marked missing, one transaction per scan.
+- **Catalog and CLI.** Immutable family/face snapshot with in-memory search;
+  `urfonts-cli index`, `search`, `stats`; fixture library indexes and rescans
+  inside the budget.
+- **Browser shell.** Sidebar with All Fonts and per-folder rows, Add Folder panel,
+  rescan, toolbar search and list/grid toggle.
+- **Rows and previews.** Fixed-height family rows and grid tiles, one `CTLine`
+  per row in `Canvas`, `FontLoader` LRU with process-local CTFonts, variable-font
+  badge.
+- **Preview settings.** Sample text, size, text color and background color,
+  applied live to every row and tile.
+- **Browser snapshot.** `--headless browser` renders the real window offscreen,
+  asserts it never activates, and writes a PNG.
+- **App bundle.** `scripts/build-app.sh` assembles and ad-hoc signs
+  `build/Ur Fonts.app` so the app launches as a normal foreground app.
+- **Sidebar selection.** All Fonts and folders use a real selection enum, so
+  every row selects and highlights.
+- **Footer layout.** Detail content and the status bar are a pinned VStack; the
+  no-results state no longer lifts the footer or leaves a gap.
+- **Preview sizing.** One CTFont per face; size changes derive with
+  `CTFontCreateCopyWithAttributes`, so the slider cannot blank or reload previews.
+- **Grid fitting.** Tiles shrink the sample to fit width and height instead of
+  clipping it; list rows still truncate.
+- **Folder management.** Remove Folder with confirmation, `urfonts-cli folders`
+  and `remove-folder`, and `split-folder` to adopt existing rows into subfolders
+  without re-reading fonts.
+- **Dropbox library split.** The 25,611-file Dropbox root was replaced by the
+  four font folders, 23,689 files, keeping parsed data.
+- **Activation engine.** Actor with activate, deactivate and reconcile; success
+  measured with `CTFontManagerGetScopeForURL`; every confirmed face journaled.
+- **Activation safety.** System Fonts folders are skipped and locked, duplicate
+  PostScript names are refused, and re-parse preserves the journal.
+- **Activation UI.** Trailing dot on rows and tiles with none, partial, all and
+  installed states; click activates or deactivates the whole family.
+- **Watcher.** FSEvents reports `(root, path)` pairs; one-second debounce;
+  directory events rescan the folder, file events scan only those files. Five
+  minute sweep covers missed events.
+- **Watched folders in the UI.** Add Folder offers Watch or One-time Scan;
+  sidebar eye icon and Watch/Stop Watching actions.
+- **Canonical paths.** Scanner and watcher agree on `realpath`; delta scans
+  touch only the changed paths.
+- **Font page.** Double-click or context menu opens a sheet with a large preview,
+  style list with per-style activation, variable axes, info, reveal and copy.
+- **Variable preview.** Axis sliders rebuild the CTFont from a variation
+  descriptor; preview updates live.
+- **Glyph map.** Character grid from `CTFontCopyCharacterSet`, search by
+  character or code point, click copies the character, context menu copies the
+  code point.
