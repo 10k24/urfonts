@@ -77,7 +77,7 @@ case "index":
         print(report.summary)
     }
     let counts = try database.counts()
-    print("database: \(counts.files) files, \(counts.faces) faces, \(counts.missing) missing")
+    print("database: \(counts.files) files, \(counts.faces) fonts, \(counts.missing) missing")
     exit(0)
 
 case "search":
@@ -95,7 +95,7 @@ case "search":
         print("\(family.name)\t\(family.faceCount) styles\t\(styles)")
     }
     print(String(
-        format: "%d families, %d faces, snapshot %.1f ms, %d matches",
+        format: "%d families, %d fonts, snapshot %.1f ms, %d matches",
         snapshot.familyCount, snapshot.faceCount, loadMs, matches.count
     ))
     exit(0)
@@ -106,11 +106,58 @@ case "stats":
     let snapshot = try database.snapshot()
     let loadMs = Date().timeIntervalSince(started) * 1000
     let counts = try database.counts()
-    print("files \(counts.files), faces \(counts.faces), missing \(counts.missing)")
+    print("files \(counts.files), fonts \(counts.faces), missing \(counts.missing)")
     print(String(
         format: "families %d, snapshot %.1f ms",
         snapshot.familyCount, loadMs
     ))
+    exit(0)
+
+case "google-catalog":
+    let families = try await GoogleFontsService.shared.catalog()
+    let withFiles = families.filter { !$0.files.isEmpty }
+    print("\(families.count) families, \(withFiles.count) with files")
+    for family in families.prefix(5) {
+        print("\(family.name)\t\(family.category)\t\(family.files.count) files")
+    }
+    exit(0)
+
+case "google-download":
+    guard let name = arguments.first else {
+        fail("google-download needs a family name")
+    }
+    let families = try await GoogleFontsService.shared.catalog()
+    guard let family = families.first(where: {
+        $0.name.caseInsensitiveCompare(name) == .orderedSame
+    }) else {
+        fail("not in the Google Fonts catalog: \(name)")
+    }
+    let base = try FileManager.default.url(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask,
+        appropriateFor: nil,
+        create: true
+    )
+    let root = base
+        .appendingPathComponent("Ur Fonts", isDirectory: true)
+        .appendingPathComponent("GoogleFonts", isDirectory: true)
+        .appendingPathComponent("Fonts", isDirectory: true)
+    let directory = root.appendingPathComponent(
+        GoogleFontFamily.folderName(for: family),
+        isDirectory: true
+    )
+    let urls = try await GoogleFontsService.shared.download(family, to: directory)
+    print("downloaded \(urls.count) files to \(directory.path)")
+    exit(0)
+
+case "index-coverage":
+    let database = try LibraryDatabase(url: databaseURL(&arguments))
+    let batch = Int(argumentValue("--batch", in: &arguments) ?? "200") ?? 200
+    let indexer = CoverageIndexer(database: database)
+    let indexed = try await indexer.index(batchSize: batch) { progress in
+        print("indexed \(progress.indexed) / \(progress.total)")
+    }
+    print("coverage indexed \(indexed) fonts")
     exit(0)
 
 case "folders":
@@ -165,12 +212,12 @@ case "inspect":
     for url in expand(arguments) {
         let faces = FontFileReader.faces(at: url)
         if faces.isEmpty {
-            print("\(url.path)\tno faces")
+            print("\(url.path)\tno fonts")
             failed = true
             continue
         }
         for face in faces {
-            print("\(face.postscriptName)\t\(face.family)\t\(face.style)\tface \(face.index)\t\(url.path)")
+            print("\(face.postscriptName)\t\(face.family)\t\(face.style)\tindex \(face.index)\t\(url.path)")
         }
     }
     exit(failed ? 1 : 0)

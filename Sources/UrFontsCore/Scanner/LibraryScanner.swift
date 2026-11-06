@@ -13,7 +13,7 @@ public struct ScanReport: Sendable, Equatable {
 
     public var summary: String {
         String(
-            format: "scanned %d, new %d, changed %d, unchanged %d, removed %d, failed %d, faces %d, %.2f s",
+            format: "scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, fonts %d, %.2f s",
             scannedFiles, newFiles, changedFiles, unchangedFiles,
             removedFiles, failedFiles, faces, seconds
         )
@@ -26,7 +26,7 @@ public enum ScanError: Error, Equatable {
 
 /// Walks a folder, parses only what changed, commits in one transaction.
 ///
-/// The stamp map makes a rescan of 23,000 unchanged files mostly stat calls.
+/// The stamp map makes a rescan of an unchanged large library mostly stat calls.
 /// Parsing runs in bounded task groups; each file is read once.
 public actor LibraryScanner {
     private let database: LibraryDatabase

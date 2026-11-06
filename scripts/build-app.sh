@@ -15,6 +15,12 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/UrFonts"
 cp "$root/macos/Info.plist" "$app/Contents/Info.plist"
 
+for resource in Assets.car UrFonts.icns; do
+    if [ -f "$root/macos/$resource" ]; then
+        cp "$root/macos/$resource" "$app/Contents/Resources/$resource"
+    fi
+done
+
 codesign --force --sign - "$app" >/dev/null 2>&1 || true
 
 echo "$app"

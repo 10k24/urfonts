@@ -3,7 +3,7 @@ import CoreText
 import Darwin
 import SwiftUI
 
-/// Phase 0: which container can carry 23,000 rows?
+/// Phase 0: which container can carry a very large library?
 ///
 /// Both variants render the same rows at a fixed height and draw one CoreText
 /// line per row. The driver scrolls a real scroll view in an offscreen window
@@ -12,7 +12,7 @@ import SwiftUI
 /// This is a spike, not the browser. Delete it once the container is chosen and
 /// the real browser owns the measurement.
 enum ListSpike {
-    static let rowCount = 5_750      // 23,000 faces, four styles per family
+    static let rowCount = 5_750      // four styles per family
     static let rowHeight: CGFloat = 64
     static let viewport = NSSize(width: 1000, height: 700)
 

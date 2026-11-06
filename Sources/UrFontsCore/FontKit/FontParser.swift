@@ -58,6 +58,51 @@ public enum FontFileParser {
         return try parse(data: data)
     }
 
+    /// Script coverage per face index, from the `cmap` table only. Reads the
+    /// file once; used by the background coverage indexer.
+    public static func coverage(url: URL) throws -> [Int: ScriptCoverage] {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let offsets = try faceOffsets(in: data)
+        var result: [Int: ScriptCoverage] = [:]
+        result.reserveCapacity(offsets.count)
+        let empty = CoverageRanges(ranges: [])
+        for (index, offset) in offsets.enumerated() {
+            guard let tables = try? FontTables(data: data, directoryOffset: offset),
+                  let cmap = tables.table("cmap"),
+                  let coverage = try? CmapCoverage.coverage(cmap) else {
+                result[index] = ScriptCoverage(mask: 0, ranges: empty)
+                continue
+            }
+            result[index] = coverage
+        }
+        return result
+    }
+
+    public static func scriptMasks(url: URL) throws -> [Int: UInt64] {
+        try coverage(url: url).mapValues(\.mask)
+    }
+
+    /// GSUB and GPOS feature tags for one face, sorted and de-duplicated.
+    public static func featureTags(url: URL, faceIndex: Int = 0) throws -> [OpenTypeFeature] {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let offsets = try faceOffsets(in: data)
+        guard faceIndex >= 0, faceIndex < offsets.count,
+              let tables = try? FontTables(data: data, directoryOffset: offsets[faceIndex])
+        else {
+            return []
+        }
+
+        var tags = Set<String>()
+        for name in ["GSUB", "GPOS"] {
+            guard let table = tables.table(name),
+                  let found = try? OpenTypeFeatureTable.tags(table) else {
+                continue
+            }
+            tags.formUnion(found)
+        }
+        return tags.sorted().map(OpenTypeFeature.init(tag:))
+    }
+
     public static func parse(data: Data) throws -> [ParsedFace] {
         let offsets = try faceOffsets(in: data)
         var faces: [ParsedFace] = []

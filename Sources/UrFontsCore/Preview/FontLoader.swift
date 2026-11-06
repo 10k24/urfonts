@@ -11,7 +11,7 @@ public struct LoadedFont: @unchecked Sendable {
 
 /// Creates preview fonts straight from files, without registration.
 ///
-/// Bounded LRU: a 23,000-font library must never have more than a viewport or
+/// Bounded LRU: a very large library must never have more than a viewport or
 /// two of fonts resident. Previews are process-local; fontd is not involved.
 public actor FontLoader {
     private struct Key: Hashable {

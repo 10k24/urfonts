@@ -23,10 +23,10 @@ public struct ActivationOutcome: Sendable, Equatable {
             return failures.prefix(2).joined(separator: "; ")
         }
         if activated > 0 {
-            return "Activated \(activated) \(activated == 1 ? "face" : "faces")"
+            return "Activated \(activated) \(activated == 1 ? "font" : "fonts")"
         }
         if deactivated > 0 {
-            return "Deactivated \(deactivated) \(deactivated == 1 ? "face" : "faces")"
+            return "Deactivated \(deactivated) \(deactivated == 1 ? "font" : "fonts")"
         }
         if installedSkipped > 0 {
             return "Already installed"

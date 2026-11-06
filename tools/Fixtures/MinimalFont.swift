@@ -2,9 +2,9 @@ import Foundation
 
 /// A structurally valid, tiny TrueType font.
 ///
-/// Fixtures need 23,000 files with unique family, style and PostScript names,
-/// and nothing else: no real glyphs are required to index or register a font.
-/// Writing one valid font from scratch keeps the fixture library small
+/// Fixtures need a large batch of files with unique family, style and PostScript
+/// names, and nothing else: no real glyphs are required to index or register a
+/// font. Writing one valid font from scratch keeps the fixture library small
 /// (about 800 bytes per file) and independent of any bundled font licence.
 ///
 /// Glyph 0 is empty. Glyph 1 is a rectangle and is mapped to A-Z, so the font

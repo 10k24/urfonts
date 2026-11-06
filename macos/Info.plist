@@ -8,6 +8,10 @@
     <string>UrFonts</string>
     <key>CFBundleIdentifier</key>
     <string>com.10k24.urfonts</string>
+    <key>CFBundleIconName</key>
+    <string>UrFonts</string>
+    <key>CFBundleIconFile</key>
+    <string>UrFonts.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

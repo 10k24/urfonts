@@ -25,6 +25,44 @@ public struct CatalogFace: Sendable, Identifiable, Equatable {
     public let descender: Double?
     public let vendorID: String?
     public let embedding: Int?
+    public let scriptMask: UInt64
+}
+
+public enum FontLocation {
+    /// Apple's own font folders. `/Library/Fonts` and `~/Library/Fonts` are
+    /// user-installed and not treated as system fonts.
+    public static func isSystemFont(path: String) -> Bool {
+        path.hasPrefix("/System/Library/Fonts/")
+    }
+}
+
+public enum FontKindFilter: String, Sendable, CaseIterable {
+    case any
+    case variable
+    case staticFont = "static"
+}
+
+/// Facets that do not need a coverage index.
+public struct CatalogFilter: Sendable, Equatable {
+    public var kind: FontKindFilter = .any
+    public var requiresItalic = false
+    public var requiresBold = false
+    public var script: FontScript?
+    public var characters: String = ""
+
+    public init() {}
+
+    public var isActive: Bool {
+        kind != .any
+            || requiresItalic
+            || requiresBold
+            || script != nil
+            || !characters.isEmpty
+    }
+
+    public var characterScalars: [UInt32] {
+        characters.unicodeScalars.map(\.value)
+    }
 }
 
 /// A family is a contiguous range in the snapshot's sorted face array. No
@@ -33,10 +71,18 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     public let id: String
     public let name: String
     public let faceRange: Range<Int>
-    public let searchText: String
+    /// Lowercased UTF-8 haystack for substring search. Bytes are much faster
+    /// than grapheme-aware `String.contains` across thousands of families.
+    public let searchBlob: Data
     public let hasVariableFace: Bool
+    public let scriptMask: UInt64
 
     public var faceCount: Int { faceRange.count }
+
+    /// Script-aware preview, falling back to the user's sample.
+    public func previewText(userText: String) -> String {
+        FontScript.previewText(mask: scriptMask, userText: userText)
+    }
 }
 
 /// Immutable read model. Built from the database at launch, replaced whole on
@@ -68,21 +114,132 @@ public struct CatalogSnapshot: Sendable {
 
     /// Substring search across family, styles and PostScript names.
     public func families(matching query: String, limit: Int = 200) -> [CatalogFamily] {
-        let needle = Self.searchFold(query)
-        guard !needle.isEmpty else { return Array(families.prefix(limit)) }
+        families(matching: query, filter: CatalogFilter(), limit: limit)
+    }
+
+    public func families(
+        matching query: String,
+        filter: CatalogFilter,
+        limit: Int = 200
+    ) -> [CatalogFamily] {
+        let needle = Data(Self.searchFold(query).utf8)
         var result: [CatalogFamily] = []
         result.reserveCapacity(min(limit, 64))
-        for family in families where family.searchText.contains(needle) {
+        for family in families {
+            if !needle.isEmpty,
+               family.searchBlob.range(of: needle) == nil {
+                continue
+            }
+            guard matches(family, filter: filter) else { continue }
             result.append(family)
             if result.count == limit { break }
         }
         return result
     }
 
+    /// Exact character presence, using ranges loaded from the coverage index.
+    public func family(
+        _ family: CatalogFamily,
+        covers scalars: [UInt32],
+        coverage: [String: CoverageRanges]
+    ) -> Bool {
+        guard !scalars.isEmpty else { return true }
+        return faces(in: family).contains { face in
+            coverage[face.id]?.containsAll(scalars) == true
+        }
+    }
+
+    public func isSystemFamily(_ family: CatalogFamily) -> Bool {
+        let faces = faces(in: family)
+        return !faces.isEmpty && faces.allSatisfy {
+            FontLocation.isSystemFont(path: $0.path)
+        }
+    }
+
+    public func families(containingAny faceIDs: Set<String>) -> [CatalogFamily] {
+        guard !faceIDs.isEmpty else { return [] }
+        return families.filter { family in
+            faces(in: family).contains { faceIDs.contains($0.id) }
+        }
+    }
+
+    public func matches(_ family: CatalogFamily, filter: CatalogFilter) -> Bool {
+        switch filter.kind {
+        case .any:
+            break
+        case .variable:
+            guard family.hasVariableFace else { return false }
+        case .staticFont:
+            guard !family.hasVariableFace else { return false }
+        }
+
+        if let script = filter.script,
+           family.scriptMask & script.rawValue == 0 {
+            return false
+        }
+
+        let faces = faces(in: family)
+        if filter.requiresItalic, !faces.contains(where: \.isItalic) {
+            return false
+        }
+        if filter.requiresBold, !faces.contains(where: { $0.weightClass >= 600 }) {
+            return false
+        }
+        return true
+    }
+
     // MARK: - Build
 
     static func build(faces input: [CatalogFace]) -> CatalogSnapshot {
+        struct Meta {
+            var name: String
+            var sortKey: String
+            var allSystem: Bool
+        }
+
+        // Family display metadata decides both the visible name and sort order.
+        // System fonts must sort by their dot-stripped name, not by the raw key.
+        var meta: [String: Meta] = [:]
+        meta.reserveCapacity(input.count / 4 + 1)
+        var latinByFamily: [String: String] = [:]
+        for face in input {
+            let system = FontLocation.isSystemFont(path: face.path)
+            if var existing = meta[face.familyKey] {
+                existing.allSystem = existing.allSystem && system
+                meta[face.familyKey] = existing
+            } else {
+                meta[face.familyKey] = Meta(
+                    name: face.family,
+                    sortKey: "",
+                    allSystem: system
+                )
+            }
+            if latinByFamily[face.familyKey] == nil {
+                latinByFamily[face.familyKey] = latinLabel(for: face)
+            }
+        }
+        for (key, var value) in meta {
+            if value.allSystem, value.name.hasPrefix("."), value.name.count > 1 {
+                value.name.removeFirst()
+            }
+            var sortBase = value.name
+            if !isUselessName(value.name),
+               !hasLatinLetters(value.name),
+               let latin = latinByFamily[key],
+               latin.caseInsensitiveCompare(value.name) != .orderedSame {
+                value.name = "\(value.name) (\(latin))"
+                sortBase = latin
+            }
+            value.sortKey = familyKey(sortBase)
+            meta[key] = value
+        }
+
         let faces = input.sorted { left, right in
+            let leftMeta = meta[left.familyKey]
+            let rightMeta = meta[right.familyKey]
+            if leftMeta?.sortKey != rightMeta?.sortKey {
+                return (leftMeta?.sortKey ?? "") < (rightMeta?.sortKey ?? "")
+            }
             if left.familyKey != right.familyKey {
                 return left.familyKey < right.familyKey
             }
@@ -101,7 +258,13 @@ public struct CatalogSnapshot: Sendable {
             families.reserveCapacity(faces.count / 4 + 1)
             for index in 1...faces.count {
                 if index == faces.count || faces[index].familyKey != faces[start].familyKey {
-                    families.append(makeFamily(faces: faces, range: start..<index))
+                    let key = faces[start].familyKey
+                    let displayName = meta[key]?.name ?? faces[start].family
+                    families.append(makeFamily(
+                        faces: faces,
+                        range: start..<index,
+                        displayName: displayName
+                    ))
                     start = index
                 }
             }
@@ -125,21 +288,73 @@ public struct CatalogSnapshot: Sendable {
         )
     }
 
-    private static func makeFamily(faces: [CatalogFace], range: Range<Int>) -> CatalogFamily {
-        let name = faces[range.lowerBound].family
+    private static func makeFamily(
+        faces: [CatalogFace],
+        range: Range<Int>,
+        displayName: String
+    ) -> CatalogFamily {
+        let name = displayName
         var parts: [String] = [searchFold(name)]
         parts.reserveCapacity(1 + range.count * 2)
         for face in faces[range] {
             parts.append(searchFold(face.style))
             parts.append(searchFold(face.postscriptName))
         }
+        let scriptMask = faces[range].reduce(UInt64(0)) { $0 | $1.scriptMask }
         return CatalogFamily(
             id: faces[range.lowerBound].familyKey,
             name: name,
             faceRange: range,
-            searchText: parts.joined(separator: "\u{1}"),
-            hasVariableFace: faces[range].contains(where: \.isVariable)
+            searchBlob: Data(parts.joined(separator: "\u{1}").utf8),
+            hasVariableFace: faces[range].contains(where: \.isVariable),
+            scriptMask: scriptMask
         )
+    }
+
+    /// A name with no letters or digits tells the user nothing and must not
+    /// become a row label. Some trial fonts use "." plus DEL or other control
+    /// characters, which render as a bare dot.
+    static func hasLatinLetters(_ name: String) -> Bool {
+        name.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x0041...0x005A, 0x0061...0x007A, 0x00C0...0x024F, 0x1E00...0x1EFF:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    /// A Latin label for a non-Latin family: the PostScript family prefix, then
+    /// the file name. Used only for display and sorting; the raw key is kept.
+    private static func latinLabel(for face: CatalogFace) -> String? {
+        let postscript = face.postscriptName
+        if let dash = postscript.firstIndex(of: "-") {
+            let prefix = String(postscript[..<dash])
+            if hasLatinLetters(prefix), !prefix.isEmpty {
+                return prefix
+            }
+        } else if hasLatinLetters(postscript), !hasLatinLetters(face.family) {
+            return postscript
+        }
+
+        let stem = fileStem(face.path)
+        if hasLatinLetters(stem), !isUselessName(stem) {
+            return stem.replacingOccurrences(of: "_", with: " ")
+        }
+        return nil
+    }
+
+    public static func isUselessName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        return !trimmed.unicodeScalars.contains {
+            CharacterSet.alphanumerics.contains($0)
+        }
+    }
+
+    public static func fileStem(_ path: String) -> String {
+        URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
     }
 
     static func familyKey(_ name: String) -> String {

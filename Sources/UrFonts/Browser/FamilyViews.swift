@@ -66,6 +66,92 @@ enum PreviewLine {
         draw(line, font: fitted, color: color, in: context, rect: rect, x: inset)
     }
 
+    /// List rows wrap to at most `maxLines`; the last line gets an ellipsis if
+    /// the text does not fit. Grid tiles keep the single-line fitted drawing.
+    static func drawWrapped(
+        text: String,
+        font: CTFont,
+        color: NSColor,
+        in context: CGContext,
+        rect: CGRect,
+        inset: CGFloat = 6,
+        maxLines: Int = 2
+    ) {
+        let availableWidth = max(1, rect.width - inset * 2)
+        let attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor,
+        ]
+        let attributed = NSAttributedString(string: text, attributes: attributes)
+        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+        let totalLength = attributed.length
+        guard totalLength > 0 else { return }
+
+        var lines: [CTLine] = []
+        var start = 0
+        while start < totalLength, lines.count < maxLines {
+            let count = CTTypesetterSuggestLineBreak(
+                typesetter,
+                start,
+                Double(availableWidth)
+            )
+            guard count > 0 else { break }
+            lines.append(CTTypesetterCreateLine(
+                typesetter,
+                CFRange(location: start, length: count)
+            ))
+            start += count
+        }
+        guard !lines.isEmpty else { return }
+
+        if start < totalLength, let last = lines.popLast() {
+            let ellipsis = makeLine(text: "…", font: font, color: color)
+            let truncated = CTLineCreateTruncatedLine(
+                last,
+                Double(availableWidth),
+                .end,
+                ellipsis
+            )
+            lines.append(truncated ?? last)
+        }
+
+        // Display faces often draw past their font metrics. Measure the ink of
+        // each line and space baselines by the largest ink box, otherwise lines
+        // overlap.
+        var inkAscent: CGFloat = 0
+        var inkDescent: CGFloat = 0
+        for line in lines {
+            let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            // Text space is y-up: maxY is the ink above the baseline, minY below.
+            inkAscent = max(inkAscent, bounds.maxY)
+            inkDescent = max(inkDescent, -bounds.minY)
+        }
+        let metricsHeight = CTFontGetAscent(font)
+            + CTFontGetDescent(font)
+            + CTFontGetLeading(font)
+        let lineHeight = max(metricsHeight, inkAscent + inkDescent) + 2
+        let blockHeight = CGFloat(lines.count) * lineHeight
+        // Center when the block fits. When the text is larger than the row, pin
+        // it to the top so scaling grows downward instead of clipping upward.
+        let top: CGFloat
+        if blockHeight <= rect.height - 12 {
+            top = max(0, (rect.height - blockHeight) / 2)
+        } else {
+            top = 6
+        }
+
+        for (index, line) in lines.enumerated() {
+            let baseline = rect.height - top - CGFloat(index) * lineHeight - inkAscent
+            drawLine(
+                line,
+                in: context,
+                rect: rect,
+                x: inset,
+                baselineFromBottom: baseline
+            )
+        }
+    }
+
     private static func makeLine(text: String, font: CTFont, color: NSColor) -> CTLine {
         let attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
@@ -86,13 +172,26 @@ enum PreviewLine {
     ) {
         let ascent = CTFontGetAscent(font)
         let descent = CTFontGetDescent(font)
+        drawLine(
+            line,
+            in: context,
+            rect: rect,
+            x: x,
+            baselineFromBottom: (rect.height - (ascent + descent)) / 2 + descent
+        )
+    }
+
+    private static func drawLine(
+        _ line: CTLine,
+        in context: CGContext,
+        rect: CGRect,
+        x: CGFloat,
+        baselineFromBottom: CGFloat
+    ) {
         context.saveGState()
         context.translateBy(x: rect.minX, y: rect.maxY)
         context.scaleBy(x: 1, y: -1)
-        context.textPosition = CGPoint(
-            x: x,
-            y: (rect.height - (ascent + descent)) / 2 + descent
-        )
+        context.textPosition = CGPoint(x: x, y: baselineFromBottom)
         CTLineDraw(line, context)
         context.restoreGState()
     }
@@ -109,6 +208,8 @@ struct FamilyRow: View, Equatable {
     let backgroundColor: Color
     let activation: FamilyActivation
     let onToggle: () -> Void
+    let maxLines: Int
+    let rowHeight: CGFloat
 
     @State private var loaded: LoadedFont?
 
@@ -128,12 +229,13 @@ struct FamilyRow: View, Equatable {
                 guard let loaded else { return }
                 let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
                 context.withCGContext { cg in
-                    PreviewLine.drawTruncated(
+                    PreviewLine.drawWrapped(
                         text: sampleText,
                         font: font,
                         color: NSColor(textColor),
                         in: cg,
-                        rect: CGRect(origin: .zero, size: size)
+                        rect: CGRect(origin: .zero, size: size),
+                        maxLines: maxLines
                     )
                 }
             }
@@ -149,13 +251,13 @@ struct FamilyRow: View, Equatable {
 
             ActivationDot(state: activation, action: onToggle)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 24)
-        .frame(height: 64)
+        .padding(.leading, 20)
+        .padding(.trailing, 28)
+        .frame(height: rowHeight)
         .background(backgroundColor)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(Color.previewDivider(on: backgroundColor))
                 .frame(height: 0.5)
         }
         .task(id: loadKey) {
@@ -182,6 +284,8 @@ struct FamilyRow: View, Equatable {
             && left.textColor == right.textColor
             && left.backgroundColor == right.backgroundColor
             && left.activation == right.activation
+            && left.maxLines == right.maxLines
+            && left.rowHeight == right.rowHeight
     }
 }
 
@@ -212,7 +316,7 @@ struct FamilyTile: View, Equatable {
                     )
                 }
             }
-            .frame(height: 72)
+            .frame(height: 76)
 
             Divider()
 
@@ -224,15 +328,18 @@ struct FamilyTile: View, Equatable {
                 Text("\(family.faceCount)")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .help(
+                        "\(family.faceCount) \(family.faceCount == 1 ? "style" : "styles")"
+                    )
                 ActivationDot(state: activation, action: onToggle)
             }
         }
-        .padding(12)
-        .frame(height: 150, alignment: .top)
+        .padding(20)
+        .frame(height: 170, alignment: .top)
         .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color.previewDivider(on: backgroundColor), lineWidth: 1)
         )
         .task(id: loadKey) {
             guard let face else { return }

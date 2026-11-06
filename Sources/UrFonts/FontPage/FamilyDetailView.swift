@@ -9,6 +9,7 @@ struct FamilyDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var axisValues: [String: Double] = [:]
+    @State private var features: [OpenTypeFeature] = []
 
     private var faces: [CatalogFace] {
         Array(model.snapshot.faces(in: family))
@@ -26,9 +27,12 @@ struct FamilyDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     detailPreview
-                    styles
                     if let previewFace, !previewFace.axes.isEmpty {
                         axes(for: previewFace)
+                    }
+                    styles
+                    if !features.isEmpty {
+                        featureList
                     }
                     if let previewFace {
                         GlyphMapView(face: previewFace, textColor: model.textColor)
@@ -48,6 +52,31 @@ struct FamilyDetailView: View {
         )
         .background(model.backgroundColor)
         .onAppear(perform: loadDefaultAxes)
+        .task(id: previewFace?.id) {
+            loadFeatures()
+        }
+    }
+
+    private var featureList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("OpenType features")
+                .font(.headline)
+            Text(features.map { OpenTypeFeature.displayName(for: $0.tag) }.joined(separator: " · "))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func loadFeatures() {
+        guard let face = previewFace else {
+            features = []
+            return
+        }
+        features = (try? FontFileParser.featureTags(
+            url: URL(fileURLWithPath: face.path),
+            faceIndex: face.index
+        )) ?? []
     }
 
     private var header: some View {
@@ -74,7 +103,7 @@ struct FamilyDetailView: View {
                 face: previewFace,
                 axes: previewFace?.axes ?? [],
                 axisValues: axisValues,
-                text: model.sampleText,
+                text: model.sampleText(for: family),
                 textColor: model.textColor
             )
             .frame(height: 120)
@@ -93,7 +122,7 @@ struct FamilyDetailView: View {
                 .font(.headline)
             VStack(spacing: 0) {
                 ForEach(faces) { face in
-                    HStack(spacing: 12) {
+                    HStack(spacing: 14) {
                         ActivationDot(
                             state: model.faceActivation(face),
                             action: { Task { await model.toggle(face: face) } }
@@ -103,15 +132,26 @@ struct FamilyDetailView: View {
                             Text(face.postscriptName)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                                 .textSelection(.enabled)
                         }
-                        Spacer()
+                        .frame(width: 170, alignment: .leading)
+
+                        StylePreview(
+                            face: face,
+                            text: model.sampleText(for: face),
+                            textColor: model.textColor
+                        )
+                        .frame(height: 46)
+
                         Text("\(face.weightClass)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
+                            .frame(width: 30, alignment: .trailing)
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
                     .padding(.horizontal, 12)
                     if face.id != faces.last?.id {
                         Divider()
@@ -207,6 +247,37 @@ struct FamilyDetailView: View {
     }
 }
 
+/// One style rendered in the sample text, so the page shows the whole family
+/// the way it will look in use.
+private struct StylePreview: View {
+    let face: CatalogFace
+    let text: String
+    let textColor: Color
+
+    @State private var loaded: LoadedFont?
+
+    var body: some View {
+        Canvas { context, size in
+            guard let loaded else { return }
+            let font = PreviewLine.font(from: loaded.ctFont, size: 30)
+            context.withCGContext { cg in
+                PreviewLine.drawTruncated(
+                    text: text,
+                    font: font,
+                    color: NSColor(textColor),
+                    in: cg,
+                    rect: CGRect(origin: .zero, size: size),
+                    inset: 0
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: face.id) {
+            loaded = await FontLoader.shared.font(path: face.path, faceIndex: face.index)
+        }
+    }
+}
+
 private struct DetailPreview: View {
     let face: CatalogFace?
     let axes: [FontAxis]
@@ -221,13 +292,16 @@ private struct DetailPreview: View {
             guard let loaded else { return }
             let font = variedFont(base: loaded.ctFont)
             context.withCGContext { cg in
-                PreviewLine.drawFitted(
+                // Fixed point size: refitting to the canvas on every axis tick
+                // changes the scale as weight changes width, which reads as
+                // jitter. Truncate instead and keep the scale stable.
+                PreviewLine.drawTruncated(
                     text: text,
                     font: font,
                     color: NSColor(textColor),
                     in: cg,
                     rect: CGRect(origin: .zero, size: size),
-                    inset: 0
+                    inset: 8
                 )
             }
         }
@@ -238,7 +312,7 @@ private struct DetailPreview: View {
     }
 
     private func variedFont(base: CTFont) -> CTFont {
-        let size: CGFloat = 72
+        let size: CGFloat = 64
         guard !axes.isEmpty else {
             return CTFontCreateCopyWithAttributes(base, size, nil, nil)
         }
