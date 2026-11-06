@@ -158,7 +158,9 @@ a font.
   licenses.
 - **`docs/ADOBE.md`.** Why there is no integration, what users should expect
   after activating a font, and the restart rule.
-- **Icon and visual design.**
+- **App icon.** `design/icon/UrFonts.icon` compiles to `Assets.car` and
+  `design/icon/legacy/icon-1024.png` builds `UrFonts.icns`; review light, dark,
+  tinted and clear appearances in Icon Composer.
 - **No telemetry.** Network access only for updates and Google Fonts downloads.
 
 ### FontBase parity verification
@@ -245,8 +247,8 @@ features are listed too, so the gap is explicit rather than implied.
 
 **Release**
 
-- Light/dark icon, notarization, Sparkle, Homebrew cask, README/help, donation,
-  Apache/NOTICE.
+- Icon appearance review, notarization, Sparkle, Homebrew cask, README/help,
+  donation, Apache/NOTICE.
 
 ### Backlog (lowest priority)
 

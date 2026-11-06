@@ -37,6 +37,9 @@ For the legacy icon (macOS 15–25):
 - sRGB, no Liquid Glass effects.
 - This is the light appearance only; macOS 15–25 has no dark icon variant.
 
+The current legacy PNG is derived from the 1024 px iOS export: the art is
+centered at 824 × 824 with a soft shadow, so it matches the Big Sur grid.
+
 ## Dark mode: one icon, two appearances
 
 You do not need a second design. In Icon Composer the same layer stack is
@@ -55,6 +58,7 @@ annotated for Default (light), Dark and Mono:
 ```
 design/icon/
   UrFonts.icon                 Icon Composer file (a package)
+  urfonts-icon.ai              Illustrator source
   legacy/
     icon-1024.png              Big Sur style, transparent, light only
 ```

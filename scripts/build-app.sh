@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Assembles build/Ur Fonts.app around the release binary.
-# Development bundle: no icon, no Sparkle yet, ad-hoc signed.
+# Development bundle: ad-hoc signed, no Sparkle yet.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

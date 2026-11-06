@@ -101,6 +101,7 @@ re-exported fonts, full GlyphsApp language parity, notarized release.
 swift build
 swift test
 ./scripts/test.sh          # tests, headless focus/render/list checks, add-files
+./scripts/build-icons.sh   # compiles Assets.car and UrFonts.icns from design/icon
 ./scripts/build-app.sh     # assembles build/Ur Fonts.app (ad-hoc signed)
 open "build/Ur Fonts.app"
 ```
