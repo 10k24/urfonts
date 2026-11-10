@@ -116,19 +116,20 @@ struct BrowserView: View {
         case .list:
             GeometryReader { proxy in
                 let rowHeight = model.previewRowHeight(
-                    previewWidth: listPreviewWidth(for: proxy.size.width)
+                    previewWidth: PreviewMetrics.listPreviewWidth(for: proxy.size.width)
                 )
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(model.visibleFamilies) { family in
                             FamilyRow(
-                                family: family,
-                                face: model.representativeFace(for: family),
+                                display: FamilyDisplay(family: family),
+                                preview: model.representativeFace(for: family)
+                                    .map { PreviewSource(face: $0) },
                                 sampleText: model.sampleText(for: family),
                                 sampleSize: model.sampleSize,
                                 textColor: model.textColor,
                                 backgroundColor: model.backgroundColor,
-                                activation: model.familyActivation(family),
+                                control: .family(model.familyActivation(family)),
                                 onToggle: { Task { await model.toggle(family) } },
                                 maxLines: model.previewMaxLines,
                                 rowHeight: rowHeight
@@ -148,18 +149,19 @@ struct BrowserView: View {
             GeometryReader { proxy in
                 ScrollView {
                     LazyVGrid(
-                        columns: gridColumns(for: proxy.size.width),
+                        columns: FamilyGridLayout.columns(for: proxy.size.width),
                         spacing: 12
                     ) {
                         ForEach(model.visibleFamilies) { family in
                             FamilyTile(
-                                family: family,
-                                face: model.representativeFace(for: family),
+                                display: FamilyDisplay(family: family),
+                                preview: model.representativeFace(for: family)
+                                    .map { PreviewSource(face: $0) },
                                 sampleText: model.sampleText(for: family),
                                 sampleSize: model.sampleSize,
                                 textColor: model.textColor,
                                 backgroundColor: model.backgroundColor,
-                                activation: model.familyActivation(family),
+                                control: .family(model.familyActivation(family)),
                                 onToggle: { Task { await model.toggle(family) } }
                             )
                             .equatable()
@@ -178,30 +180,6 @@ struct BrowserView: View {
 
     /// Four columns at most. Below that the count follows the available width,
     /// so tiles never get narrower than the readable minimum.
-    private func gridColumns(for width: CGFloat) -> [GridItem] {
-        let spacing: CGFloat = 12
-        let horizontalPadding: CGFloat = 32
-        let minimumTile: CGFloat = 280
-        let available = max(1, width - horizontalPadding)
-        let fitting = Int((available + spacing) / (minimumTile + spacing))
-        let count = min(4, max(1, fitting))
-        return Array(
-            repeating: GridItem(.flexible(), spacing: spacing),
-            count: count
-        )
-    }
-
-    /// Width left for the preview after the metadata column and the widest
-    /// trailing accessories. One height serves every row, so reserve the VF
-    /// badge even when the current family lacks it.
-    private func listPreviewWidth(for rowWidth: CGFloat) -> CGFloat {
-        let fixed = PreviewMetrics.rowHorizontalInset + 230 + 16
-            + PreviewMetrics.rowHorizontalInset
-            + PreviewMetrics.rowTrailingInset
-            + PreviewMetrics.variableBadgeReserve
-        return max(1, rowWidth - fixed)
-    }
-
     private var emptyState: some View {
         ContentUnavailableView {
             Label("No fonts yet", systemImage: "textformat")
@@ -256,13 +234,22 @@ struct BrowserView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button { Task { await model.rescanAll() } } label: {
-                Label("Rescan", systemImage: "arrow.clockwise")
+        if model.selection == .googleFonts {
+            ToolbarItem(placement: .primaryAction) {
+                Button { model.googleRefreshRequest &+= 1 } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .help("Refresh the Google Fonts catalog")
             }
-            .help("Rescan every folder")
+        } else {
+            ToolbarItem(placement: .primaryAction) {
+                Button { Task { await model.rescanAll() } } label: {
+                    Label("Rescan", systemImage: "arrow.clockwise")
+                }
+                .help("Rescan every folder")
+            }
         }
-        if model.selection != .googleFonts && model.selection != .problems {
+        if model.selection != .problems {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
@@ -291,6 +278,8 @@ struct BrowserView: View {
                 .labelsHidden()
                 .frame(width: 90)
             }
+        }
+        if model.selection != .googleFonts && model.selection != .problems {
             ToolbarItem(placement: .primaryAction) {
                 Button { showFilters = true } label: {
                     Label(
@@ -375,7 +364,7 @@ struct BrowserView: View {
     private var statusBar: some View {
         HStack(spacing: 12) {
             if !model.status.isEmpty {
-                Text(model.status)
+                Text(model.status.sentenceCased)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -390,7 +379,6 @@ struct BrowserView: View {
                     .frame(width: 22, alignment: .trailing)
             }
             .help("Preview size")
-            Text(model.visibleStatus)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -636,5 +624,14 @@ func importSettings(using model: AppModel) {
                 model.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+private extension String {
+    /// Sentence case for footer status lines. Keep the rest of the string
+    /// untouched so filenames, acronyms and paths survive.
+    var sentenceCased: String {
+        guard let first = first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }

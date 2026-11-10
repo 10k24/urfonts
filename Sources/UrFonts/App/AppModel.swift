@@ -125,6 +125,7 @@ final class AppModel {
     var status = ""
     var errorMessage: String?
     var pendingFolderAdd: PendingFolderAdd?
+    var googleRefreshRequest = 0
     var activeFaceIDs: Set<String> = []
     var activePostScriptOwners: [String: String] = [:]
     var duplicateCount = 0
@@ -180,6 +181,11 @@ final class AppModel {
     @ObservationIgnored private var visibleCache: VisibleResult?
     @ObservationIgnored private var collectionFaceIDsCache: [String: Set<String>] = [:]
     @ObservationIgnored private var collectionMembershipCache: [String: Set<String>]?
+    @ObservationIgnored private var googleFacesCache: (
+        revision: Int,
+        byFolder: [String: [CatalogFace]],
+        byPath: [String: [CatalogFace]]
+    )?
 
     private struct VisibleKey: Equatable {
         let query: String
@@ -695,21 +701,6 @@ final class AppModel {
         try await GoogleFontsService.shared.catalog(forceRefresh: forceRefresh)
     }
 
-    func downloadedGoogleFamilies() -> Set<String> {
-        guard let root = try? googleFontsRoot(),
-              let directories = try? FileManager.default.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey]
-              ) else {
-            return []
-        }
-        return Set(directories.compactMap { url in
-            (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                ? url.lastPathComponent
-                : nil
-        })
-    }
-
     /// Indexes downloads made outside the app (for example by the CLI) and
     /// keeps the managed folder in the library across launches.
     func syncGoogleFonts() async {
@@ -730,21 +721,252 @@ final class AppModel {
         }
     }
 
-    func downloadGoogleFont(_ family: GoogleFontFamily) async throws {
+    // MARK: - Google Fonts activation
+
+    /// Faces downloaded under the managed Google folder, keyed by family folder
+    /// and by exact local path. Rebuilt when the catalog snapshot reloads.
+    private func googleFaceCache() -> (
+        byFolder: [String: [CatalogFace]],
+        byPath: [String: [CatalogFace]]
+    ) {
+        if let cache = googleFacesCache, cache.revision == catalogRevision {
+            return (cache.byFolder, cache.byPath)
+        }
+        var byFolder: [String: [CatalogFace]] = [:]
+        var byPath: [String: [CatalogFace]] = [:]
+        if let root = try? googleFontsRoot() {
+            let rootPath = LibraryPath.resolve(root.path)
+            for face in snapshot.faces
+            where LibraryPath.isInside(face.path, root: rootPath) {
+                let relative = face.path.dropFirst(rootPath.count + 1)
+                guard let folder = relative.split(separator: "/").first else {
+                    continue
+                }
+                byFolder[String(folder), default: []].append(face)
+                byPath[face.path, default: []].append(face)
+            }
+        }
+        googleFacesCache = (catalogRevision, byFolder, byPath)
+        return (byFolder, byPath)
+    }
+
+    private func googleLocalURL(_ family: GoogleFontFamily, _ file: GoogleFontFile) throws -> URL {
+        let root = try googleFontsRoot()
+        return root
+            .appendingPathComponent(GoogleFontFamily.folderName(for: family), isDirectory: true)
+            .appendingPathComponent(file.filename)
+    }
+
+    func googleAllFilesDownloaded(_ family: GoogleFontFamily) -> Bool {
+        family.files.allSatisfy { file in
+            guard let url = try? googleLocalURL(family, file) else { return false }
+            return FileManager.default.fileExists(atPath: url.path)
+        }
+    }
+
+    func googleFace(family: GoogleFontFamily, file: GoogleFontFile) -> CatalogFace? {
+        guard let url = try? googleLocalURL(family, file) else { return nil }
+        return googleFaceCache().byPath[LibraryPath.resolve(url.path)]?.first
+    }
+
+    func googleFileActivation(
+        family: GoogleFontFamily,
+        file: GoogleFontFile
+    ) -> FaceActivationState? {
+        guard let url = try? googleLocalURL(family, file),
+              FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let faces = googleFaceCache().byPath[LibraryPath.resolve(url.path)] ?? []
+        guard !faces.isEmpty else { return nil }
+        switch activationState(for: faces) {
+        case .all:
+            return .active
+        case .installed:
+            return .installed
+        case .missing:
+            return .missing
+        case .blocked(let owner):
+            return .blocked(ownerPath: owner)
+        case .none, .partial:
+            return .available
+        }
+    }
+
+    func googleFamilyActivation(_ family: GoogleFontFamily) -> FamilyActivation {
+        let folder = GoogleFontFamily.folderName(for: family)
+        let faces = googleFaceCache().byFolder[folder] ?? []
+        return activationState(for: faces)
+    }
+
+    func googleFamilyPreviewFace(_ family: GoogleFontFamily) -> CatalogFace? {
+        let folder = GoogleFontFamily.folderName(for: family)
+        let faces = googleFaceCache().byFolder[folder] ?? []
+        return faces.first { !$0.isItalic } ?? faces.first
+    }
+
+    func googlePreviewURL(
+        family: GoogleFontFamily,
+        text: String
+    ) async -> URL? {
+        // The subset must include the truncation periods; otherwise a clipped
+        // grid tile shows three .notdef boxes.
+        await GoogleFontPreviewService.shared.previewURL(
+            familyName: family.name,
+            text: text + " ."
+        )
+    }
+
+    private func activationState(for faces: [CatalogFace]) -> FamilyActivation {
+        let present = faces.filter { $0.fileStatus == "ok" }
+        guard !present.isEmpty else { return .missing }
+        let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
+        guard !activatable.isEmpty else { return .installed }
+
+        let active = activatable.reduce(0) {
+            $0 + (activeFaceIDs.contains($1.id) ? 1 : 0)
+        }
+        if active == 0 {
+            let available = activatable.filter {
+                faceActivationState($0) == .available
+            }
+            if available.isEmpty,
+               let owner = activatable.compactMap({ face -> String? in
+                   if case .blocked(let owner) = faceActivationState(face) {
+                       return owner
+                   }
+                   return nil
+               }).first {
+                return .blocked(ownerPath: owner)
+            }
+            return .none
+        }
+        return active == activatable.count ? .all : .partial
+    }
+
+    private func toggle(faces: [CatalogFace], label: String) async {
+        guard let activationEngine else { return }
+        let present = faces.filter { $0.fileStatus == "ok" }
+        guard !present.isEmpty else {
+            status = "No readable files in \(label)"
+            return
+        }
+        let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
+        guard !activatable.isEmpty else {
+            status = "\(label) is installed"
+            return
+        }
+
+        let state = activationState(for: faces)
+        let targetsFaces: [CatalogFace]
+        switch state {
+        case .all:
+            targetsFaces = activatable.filter { activeFaceIDs.contains($0.id) }
+        case .none, .partial:
+            targetsFaces = activatable.filter {
+                faceActivationState($0) == .available
+            }
+        case .installed, .missing, .blocked:
+            return
+        }
+        guard !targetsFaces.isEmpty else {
+            status = "No activatable files in \(label)"
+            return
+        }
+        let targets = targetsFaces.map {
+            ActivationTarget(
+                faceID: $0.id,
+                path: $0.path,
+                postscriptName: $0.postscriptName
+            )
+        }
+        status = state == .all
+            ? "Deactivating \(label)…"
+            : "Activating \(label)…"
+        let outcome = state == .all
+            ? await activationEngine.deactivate(targets)
+            : await activationEngine.activate(targets, scope: .user, source: "manual")
+        refreshActive()
+        status = outcome.summary.isEmpty ? "No change" : outcome.summary
+    }
+
+    private func scanGoogleFiles(_ urls: [URL]) async throws {
         guard let database else { return }
         let root = try googleFontsRoot()
-        let folder = GoogleFontFamily.folderName(for: family)
-        let urls = try await GoogleFontsService.shared.download(
-            family,
-            to: root.appendingPathComponent(folder, isDirectory: true)
-        )
         let report = try await LibraryScanner(database: database).scan(
             changes: urls.map(\.path),
             folder: root,
             kind: .managed
         )
-        status = "Downloaded \(family.name), \(report.faces) fonts"
+        status = "Indexed \(report.faces) Google fonts"
         await reload()
+    }
+
+    private func downloadGoogleFiles(
+        _ family: GoogleFontFamily,
+        files: [GoogleFontFile],
+        progress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws {
+        let root = try googleFontsRoot()
+        let directory = root.appendingPathComponent(
+            GoogleFontFamily.folderName(for: family),
+            isDirectory: true
+        )
+        _ = try await GoogleFontsService.shared.download(
+            family,
+            files: files,
+            to: directory,
+            progress: progress
+        )
+    }
+
+    func toggleGoogleFile(
+        _ family: GoogleFontFamily,
+        file: GoogleFontFile,
+        progress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws {
+        let local = try googleLocalURL(family, file)
+        var needsScan = false
+        if !FileManager.default.fileExists(atPath: local.path) {
+            try await downloadGoogleFiles(family, files: [file], progress: progress)
+            needsScan = true
+        }
+        let localPath = LibraryPath.resolve(local.path)
+        if googleFaceCache().byPath[localPath] == nil {
+            needsScan = true
+        }
+        if needsScan {
+            try await scanGoogleFiles([local])
+        }
+        let faces = googleFaceCache().byPath[localPath] ?? []
+        guard !faces.isEmpty else { throw GoogleFontsError.notIndexed }
+        await toggle(faces: faces, label: file.filename)
+    }
+
+    func toggleGoogleFamily(
+        _ family: GoogleFontFamily,
+        progress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws {
+        let missing = family.files.filter { file in
+            guard let url = try? googleLocalURL(family, file) else { return true }
+            return !FileManager.default.fileExists(atPath: url.path)
+        }
+        if !missing.isEmpty {
+            try await downloadGoogleFiles(family, files: missing, progress: progress)
+        }
+        let folder = GoogleFontFamily.folderName(for: family)
+        var needsScan = !missing.isEmpty
+        let localPaths = family.files.compactMap { try? googleLocalURL(family, $0) }
+        let currentFaces = googleFaceCache().byFolder[folder] ?? []
+        if currentFaces.count < localPaths.count {
+            needsScan = true
+        }
+        if needsScan {
+            try await scanGoogleFiles(localPaths)
+        }
+        let faces = googleFaceCache().byFolder[folder] ?? []
+        guard !faces.isEmpty else { throw GoogleFontsError.notIndexed }
+        await toggle(faces: faces, label: family.name)
     }
 
     // MARK: - Settings export
@@ -959,10 +1181,6 @@ final class AppModel {
         let loaded = (try? database.coverageRanges()) ?? [:]
         coverageRangesByFace = loaded
         return loaded
-    }
-
-    func invalidateCoverageRanges() {
-        coverageRangesByFace = nil
     }
 
     func sampleText(for family: CatalogFamily) -> String {

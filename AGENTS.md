@@ -167,12 +167,14 @@ These are the facts the design rests on. Verify before changing any of them.
   page family; `--text TEXT` overrides the preview sample. `--headless add-files`
   exercises the individual file add against a temporary database,
   `--headless ignore-folder` exercises folder exclusion and missing-entry
-  cleanup against a temporary database, and `--headless settings` renders the
-  Settings window with the real ignore list.
+  cleanup against a temporary database, `--headless settings` renders the
+  Settings window with the real ignore list, and `--headless google-detail`
+  renders a host family sheet from the cached Google catalog.
 - Sidebar selection uses an enum, never an optional ID. A `nil` tag is SwiftUI's
   "no selection" and makes the All Fonts row unselectable.
 - Detail content and the status bar are a pinned `VStack`. `safeAreaInset` lets
-  the footer float above short states such as no search results.
+  the footer float above short states such as no search results. Footer status
+  messages are sentence case; the right side holds only preview size.
 - Preview size is derived from one cached CTFont per face with
   `CTFontCreateCopyWithAttributes`. Never key a font load on point size: that
   reopens the file and blanks the row on every slider tick.
@@ -248,11 +250,12 @@ These are the facts the design rests on. Verify before changing any of them.
   tooltips; file and face counts differ for TTC/OTC files.
 - User-facing text says "fonts", never "faces". A face is the stored unit; a
   font is what the user selects and previews. "Face" stays in the schema and
-  code. The window subtitle and status bar count fonts: the denominator is the
-  selected sidebar item's faces (library total only for All Fonts), and the
-  numerator is the faces in visible rows after search, filters and the system
-  toggle. Scope counts use paths and collection membership, never the sum of a
-  family's faces, because a family can span folders.
+  code. The window subtitle counts fonts: the denominator is the selected
+  sidebar item's faces (library total only for All Fonts), and the numerator is
+  the faces in visible rows after search, filters and the system toggle. The
+  footer carries the latest action message and the preview size, not counts.
+  Scope counts use paths and collection membership, never the sum of a family's
+  faces, because a family can span folders.
 - A saved sample is a snapshot of preview text, size and colors. Selecting one
   applies it; Update overwrites the selected sample; Save as Sample always
   creates a new one. Dirty state compares the current settings to the selected
@@ -374,8 +377,31 @@ These are the facts the design rests on. Verify before changing any of them.
   a `.managed` folder that never appears in the sidebar. Licenses are saved next
   to the fonts.
 - The catalog is the Hosts → Google Fonts sidebar selection, rendered inline.
-  There is no toolbar globe or sheet; downloaded families join the same library
-  and Active scopes as local fonts.
+  There is no toolbar globe or catalog sheet; a family sheet lists the individual
+  files. Downloaded families join the same library and Active scopes as local
+  fonts.
+- Hosts use the global toolbar search and view picker, never a local field or
+  header. The query persists across sidebar changes but is evaluated against the
+  current context: the Google catalog in Hosts, the library snapshot everywhere
+  else. Active still includes active Google downloads. Hosts render through the
+  same `FamilyRow` / `FamilyTile` and grid layout as the library.
+- Undownloaded host rows fetch a tiny TTF subset from the Google Fonts CSS API
+  (`css2?...&text=<configured sample>`) into
+  `Caches/Ur Fonts/HostPreviews`. This is preview-only: it never enters the
+  managed library, activation journal or settings export. The subset includes
+  the truncation period so clipped tiles do not show `.notdef`. Downloaded
+  families use their real managed face instead.
+- Host rows use the library activation controls, never a download-only button.
+  An open square downloads and activates; a checked square deactivates. Files are
+  requested per family or per file. `HostControlPhase` and
+  `HostActivationControl` are provider-neutral so future hosts reuse the same
+  rows, progress ring and state machine.
+- The family sheet lists each remote file with the same `FaceActivationControl`
+  and `FontFilePreview` as library files. A single file downloads, indexes and
+  activates independently. Catalog faces are found by exact managed path, not
+  family name, so local duplicates are never toggled by mistake.
+- Download progress is a circular ring with a down arrow. The service writes
+  each TTF atomically, skips an existing license, and reports `(done, total)`.
 - Settings export excludes managed folders; Google downloads are re-fetchable,
   not user configuration.
 - GitHub's unauthenticated limit is 60 requests/hour. Refresh uses the cache

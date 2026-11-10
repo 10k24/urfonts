@@ -23,4 +23,15 @@ enum PreviewMetrics {
     static let rowTrailingInset: CGFloat = activationHitSize + rowAccessoryGap
     /// Extra space kept clear when the VF badge is present.
     static let variableBadgeReserve: CGFloat = (32 * controlScale).rounded()
+
+    /// Width left for the preview after the metadata column and the widest
+    /// trailing accessories. One height serves every row, so reserve the VF
+    /// badge even when the current family lacks it.
+    static func listPreviewWidth(for rowWidth: CGFloat) -> CGFloat {
+        let fixed = rowHorizontalInset + 230 + 16
+            + rowHorizontalInset
+            + rowTrailingInset
+            + variableBadgeReserve
+        return max(1, rowWidth - fixed)
+    }
 }

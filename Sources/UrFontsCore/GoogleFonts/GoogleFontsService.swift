@@ -100,23 +100,28 @@ public actor GoogleFontsService {
         return families
     }
 
-    /// Downloads every TTF for the family plus its license file. Returns local
-    /// TTF URLs.
+    /// Downloads requested TTF files for the family plus its license file.
+    /// Returns local TTF URLs. Pass a file subset for per-font downloads.
     public func download(
         _ family: GoogleFontFamily,
+        files requested: [GoogleFontFile]? = nil,
         to directory: URL,
         progress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> [URL] {
-        guard !family.files.isEmpty else {
+        let files = requested ?? family.files
+        guard !files.isEmpty else {
             throw GoogleFontsError.noFiles
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
+        let licenseURL = directory.appendingPathComponent("LICENSE.txt")
+        let needsLicense = family.licensePath != nil
+            && !FileManager.default.fileExists(atPath: licenseURL.path)
         var localURLs: [URL] = []
-        let total = family.files.count + (family.licensePath == nil ? 0 : 1)
+        let total = files.count + (needsLicense ? 1 : 0)
         var done = 0
 
-        for file in family.files {
+        for file in files {
             let url = try Self.rawURL(file.path)
             let (data, response) = try await URLSession.shared.data(from: url)
             try Self.validate(response)
@@ -127,34 +132,17 @@ public actor GoogleFontsService {
             progress?(done, total)
         }
 
-        if let licensePath = family.licensePath,
+        if needsLicense, let licensePath = family.licensePath,
            let url = try? Self.rawURL(licensePath) {
             if let (data, response) = try? await URLSession.shared.data(from: url) {
                 if (response as? HTTPURLResponse)?.statusCode == 200 {
-                    try? data.write(
-                        to: directory.appendingPathComponent("LICENSE.txt"),
-                        options: .atomic
-                    )
+                    try? data.write(to: licenseURL, options: .atomic)
                 }
             }
             done += 1
             progress?(done, total)
         }
         return localURLs
-    }
-
-    public nonisolated func isDownloaded(_ family: GoogleFontFamily, in root: URL) -> Bool {
-        let directory = root.appendingPathComponent(
-            GoogleFontFamily.folderName(for: family),
-            isDirectory: true
-        )
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        ) else {
-            return false
-        }
-        return files.contains { $0.pathExtension.lowercased() == "ttf" }
     }
 
     // MARK: - Fetch
@@ -293,12 +281,14 @@ public enum GoogleFontsError: LocalizedError {
     case noFiles
     case badURL
     case http(Int)
+    case notIndexed
 
     public var errorDescription: String? {
         switch self {
         case .noFiles: "This family has no downloadable files."
         case .badURL: "The Google Fonts file URL could not be built."
         case .http(let status): "Google Fonts returned HTTP \(status)."
+        case .notIndexed: "The downloaded files could not be indexed."
         }
     }
 }

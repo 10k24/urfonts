@@ -12,11 +12,12 @@ public struct ScanReport: Sendable, Equatable {
     public let seconds: Double
 
     public var summary: String {
-        String(
-            format: "scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, fonts %d, %.2f s",
+        let summary = String(
+            format: "Scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, fonts %d, %.2f s",
             scannedFiles, newFiles, changedFiles, unchangedFiles,
             removedFiles, failedFiles, faces, seconds
         )
+        return summary
     }
 }
 

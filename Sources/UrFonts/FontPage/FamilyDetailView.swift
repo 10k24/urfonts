@@ -194,7 +194,7 @@ struct FamilyDetailView: View {
                                     .foregroundStyle(.orange)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
-                                StylePreview(
+                                FontFilePreview(
                                     face: face,
                                     text: model.sampleText(for: face),
                                     textColor: model.textColor
@@ -348,35 +348,6 @@ struct FamilyDetailView: View {
 
 /// One style rendered in the sample text, so the page shows the whole family
 /// the way it will look in use.
-private struct StylePreview: View {
-    let face: CatalogFace
-    let text: String
-    let textColor: Color
-
-    @State private var loaded: LoadedFont?
-
-    var body: some View {
-        Canvas { context, size in
-            guard let loaded else { return }
-            let font = PreviewLine.font(from: loaded.ctFont, size: 30)
-            context.withCGContext { cg in
-                PreviewLine.drawTruncated(
-                    text: text,
-                    font: font,
-                    color: NSColor(textColor),
-                    in: cg,
-                    rect: CGRect(origin: .zero, size: size),
-                    inset: 0
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: face.id) {
-            loaded = await FontLoader.shared.font(path: face.path, faceIndex: face.index)
-        }
-    }
-}
-
 private struct DetailPreview: View {
     let face: CatalogFace?
     let axes: [FontAxis]

@@ -200,10 +200,10 @@ features are listed too, so the gap is explicit rather than implied.
 - Active sidebar: count matches the activation journal; activating and
   deactivating a family moves it in and out; partial families appear; the empty
   state explains how to populate it.
-- Status text and window subtitle: All Fonts shows the library font total; a
-  folder or collection shows its own face total; search shows "x of scope
-  total fonts"; hiding system fonts moves the hidden faces into the "of"
-  denominator; Warnings shows only its warning count.
+- Window subtitle: All Fonts shows the library font total; a folder or collection
+  shows its own face total; search shows "x of scope total fonts"; hiding system
+  fonts moves the hidden faces into the "of" denominator; Warnings shows only
+  its warning count. The footer shows the latest action and preview size.
 - Add Fonts: choose files and drop files/folders on the browser; files inside an
   indexed folder join it, outside files appear under their parent directory.
 - Warnings: badge matches duplicate plus missing counts; duplicate names exclude
@@ -340,10 +340,13 @@ features are listed too, so the gap is explicit rather than implied.
 - **Text growth direction.** Drag the status bar size slider from small to
   large; text should grow downward (or symmetrically while it fits), never only
   upward. The slider stays accent blue while the window is active.
-- **Google Fonts.** Select Hosts → Google Fonts, search a family, download it,
-  confirm its styles appear in the library and activate; quit and relaunch to
-  confirm the managed folder is still indexed. Check the first load time and
-  GitHub rate limit behavior.
+- **Google Fonts.** Select Hosts → Google Fonts and confirm host rows and
+  grid tiles match the library: inline preview from the configured sample before
+  download, shared search and view picker, progress ring, automatic activation
+  and family detail sheet. Download one file from detail and confirm only that
+  file activates; deactivate it and confirm the family shows partial. Quit and
+  relaunch to confirm the managed folder is still indexed. Check the first load
+  time and GitHub rate limit behavior.
 - **Folder order.** Right-click Move Up/Move Down and relaunch: the order
   sticks. A newly added folder lands at the bottom. On a clean library the three
   macOS font folders are present, watched, and ordered first.
@@ -497,8 +500,10 @@ features are listed too, so the gap is explicit rather than implied.
 - **Google Fonts provider.** Runtime catalog from the public metadata endpoint,
   TTF files from the official `google/fonts` repository, license copied, cache
   under Application Support, downloads indexed as a hidden managed folder.
-  Search, download and refresh in the Hosts view; CLI `google-catalog` and
-  `google-download`.
+  Hosts use the library list/grid rows, shared search and view picker, inline
+  subset previews from the configured sample, and library activation controls
+  with download progress. Family and single-file download+activation are
+  supported. CLI `google-catalog` and `google-download`.
 - **Contrast-aware separators.** List and grid separators use a neutral gray
   chosen from the preview background luminance, not the app appearance.
 - **Color swap.** One button swaps preview text and background colors.

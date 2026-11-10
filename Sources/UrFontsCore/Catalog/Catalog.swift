@@ -394,13 +394,6 @@ public struct CatalogSnapshot: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func fold(_ value: String) -> String {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                     locale: .current)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     /// Search folds run tens of thousands of times per snapshot. Lowercasing is
     /// several times cheaper than full diacritic folding and finds the same
     /// names in practice; accents still match through the family key, which is

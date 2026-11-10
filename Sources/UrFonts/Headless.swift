@@ -41,6 +41,8 @@ enum Headless {
             exit(ignoreFolder())
         case "settings":
             exit(settings())
+        case "google-detail":
+            exit(googleDetail())
         default:
             FileHandle.standardError.write(Data("unknown headless scenario: \(scenario)\n".utf8))
             exit(1)
@@ -429,6 +431,96 @@ enum Headless {
         logger.check(model.missingFileCount == 0, "warning count cleared")
         logger.check(!app.isActive, "still not active")
 
+        return logger.finish()
+    }
+
+    /// Renders a host family sheet. Uses the cached Google catalog so the
+    /// per-file controls and previews can be checked without a download.
+    private static func googleDetail() -> Int32 {
+        let logger = Logger(name: "google-detail")
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+
+        let model = AppModel()
+        Task { @MainActor in await model.start() }
+        let deadline = Date().addingTimeInterval(15)
+        while model.isLoading, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        logger.check(!model.isLoading, "library loaded")
+
+        let requested: String? = {
+            guard let index = CommandLine.arguments.firstIndex(of: "--family"),
+                  index + 1 < CommandLine.arguments.count else { return nil }
+            return CommandLine.arguments[index + 1]
+        }()
+        let families = {
+            final class Box {
+                var values: [GoogleFontFamily] = []
+            }
+            let box = Box()
+            Task { @MainActor in
+                box.values = (try? await model.googleFontCatalog(forceRefresh: false)) ?? []
+            }
+            let catalogDeadline = Date().addingTimeInterval(15)
+            while box.values.isEmpty, Date() < catalogDeadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
+            return box.values
+        }()
+        let family = requested
+            .flatMap { name in
+                families.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            }
+            ?? families.first { $0.name == "Inter" }
+            ?? families.first
+        guard let family else {
+            logger.check(false, "found a Google family")
+            return logger.finish()
+        }
+        logger.check(true, "family: \(family.name)")
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 680),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+        window.contentView = NSHostingView(
+            rootView: GoogleFontDetailView(model: model, family: family)
+        )
+        window.orderBack(nil)
+        window.displayIfNeeded()
+
+        let settle = Date().addingTimeInterval(1.5)
+        while Date() < settle {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        window.displayIfNeeded()
+
+        guard let content = window.contentView,
+              let representation = content.bitmapImageRepForCachingDisplay(
+                in: content.bounds
+              ) else {
+            logger.check(false, "captured Google detail")
+            window.orderOut(nil)
+            return logger.finish()
+        }
+        content.cacheDisplay(in: content.bounds, to: representation)
+        if let png = representation.representation(using: .png, properties: [:]) {
+            let url = logger.directory.appendingPathComponent("google-detail.png")
+            try? png.write(to: url)
+            logger.check(
+                FileManager.default.fileExists(atPath: url.path),
+                "wrote google-detail.png"
+            )
+        } else {
+            logger.check(false, "encoded google-detail.png")
+        }
+        logger.check(!app.isActive, "still not active")
+        window.orderOut(nil)
         return logger.finish()
     }
 

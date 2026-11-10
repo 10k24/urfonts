@@ -10,6 +10,7 @@ swift run -c release UrFonts --headless focus-check
 swift run -c release UrFonts --headless render
 swift run -c release UrFonts --headless list-spike
 swift run -c release UrFonts --headless settings
+swift run -c release UrFonts --headless google-detail --family Inter
 
 # Individual file adds and folder exclusion. Two real system fonts keep this
 # independent of the user's library; the temporary databases are discarded.

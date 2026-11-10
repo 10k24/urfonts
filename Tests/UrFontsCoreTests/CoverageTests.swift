@@ -23,7 +23,7 @@ struct CoverageTests {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let url = root.appendingPathComponent("FixtureFamily00001-Regular.ttf")
-        let masks = try FontFileParser.scriptMasks(url: url)
+        let masks = try FontFileParser.coverage(url: url).mapValues(\.mask)
         let mask = try #require(masks[0])
         #expect(mask & FontScript.latin.rawValue != 0)
         #expect(mask & FontScript.greek.rawValue == 0)
@@ -115,7 +115,7 @@ struct CoverageTests {
     func systemKorean() throws {
         let url = URL(fileURLWithPath: "/System/Library/Fonts/AppleSDGothicNeo.ttc")
         guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let masks = try FontFileParser.scriptMasks(url: url)
+        let masks = try FontFileParser.coverage(url: url).mapValues(\.mask)
         #expect(masks.values.contains { $0 & FontScript.hangul.rawValue != 0 })
     }
 }

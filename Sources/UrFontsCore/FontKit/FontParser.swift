@@ -78,10 +78,6 @@ public enum FontFileParser {
         return result
     }
 
-    public static func scriptMasks(url: URL) throws -> [Int: UInt64] {
-        try coverage(url: url).mapValues(\.mask)
-    }
-
     /// GSUB and GPOS feature tags for one face, sorted and de-duplicated.
     public static func featureTags(url: URL, faceIndex: Int = 0) throws -> [OpenTypeFeature] {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)

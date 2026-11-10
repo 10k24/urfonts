@@ -293,14 +293,90 @@ extension VerticalAlignment {
     static let previewBaseline = VerticalAlignment(PreviewBaseline.self)
 }
 
+/// A local font file used for a preview. Library rows pass a catalog face;
+/// host rows pass their downloaded face or a lightweight preview subset.
+struct PreviewSource: Equatable {
+    let path: String
+    let faceIndex: Int
+
+    init(path: String, faceIndex: Int = 0) {
+        self.path = path
+        self.faceIndex = faceIndex
+    }
+
+    init(face: CatalogFace) {
+        self.path = face.path
+        self.faceIndex = face.index
+    }
+}
+
+/// Display data shared by library and host rows. Keeps `FamilyRow` and
+/// `FamilyTile` independent of `CatalogFamily`.
+struct FamilyDisplay: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let countLabel: String
+    let shortCount: String
+    let hasVariableFace: Bool
+    let warning: String?
+
+    init(
+        id: String,
+        name: String,
+        countLabel: String,
+        shortCount: String,
+        hasVariableFace: Bool,
+        warning: String?
+    ) {
+        self.id = id
+        self.name = name
+        self.countLabel = countLabel
+        self.shortCount = shortCount
+        self.hasVariableFace = hasVariableFace
+        self.warning = warning
+    }
+
+    init(family: CatalogFamily) {
+        var reasons: [String] = []
+        if family.hasDuplicatePostScriptNames {
+            reasons.append("Multiple files share a PostScript name")
+        }
+        if family.missingFaceCount > 0 {
+            reasons.append("\(family.missingFaceCount) file(s) missing")
+        }
+        self.init(
+            id: family.id,
+            name: family.name,
+            countLabel: family.countLabel,
+            shortCount: family.hasDuplicatePostScriptNames
+                ? "\(family.faceCount) files"
+                : "\(family.faceCount)",
+            hasVariableFace: family.hasVariableFace,
+            warning: reasons.isEmpty ? nil : reasons.joined(separator: ". ")
+        )
+    }
+
+    init(google family: GoogleFontFamily) {
+        let variants = family.variants.count
+        self.init(
+            id: family.name,
+            name: family.name,
+            countLabel: "\(variants) \(variants == 1 ? "variant" : "variants") · \(family.category)",
+            shortCount: "\(variants)",
+            hasVariableFace: family.isVariable,
+            warning: family.files.isEmpty ? "No downloadable files" : nil
+        )
+    }
+}
+
 struct FamilyRow: View, Equatable {
-    let family: CatalogFamily
-    let face: CatalogFace?
+    let display: FamilyDisplay
+    let preview: PreviewSource?
     let sampleText: String
     let sampleSize: Double
     let textColor: Color
     let backgroundColor: Color
-    let activation: FamilyActivation
+    let control: HostControlPhase
     let onToggle: () -> Void
     let maxLines: Int
     let rowHeight: CGFloat
@@ -315,7 +391,7 @@ struct FamilyRow: View, Equatable {
             metadata
                 .alignmentGuide(.previewBaseline) { $0[.firstTextBaseline] }
 
-            preview
+            previewCanvas
                 .alignmentGuide(.previewBaseline) { _ in previewBaseline }
         }
         .padding(.leading, PreviewMetrics.rowHorizontalInset)
@@ -323,7 +399,7 @@ struct FamilyRow: View, Equatable {
             .trailing,
             PreviewMetrics.rowHorizontalInset
                 + PreviewMetrics.rowTrailingInset
-                + (family.hasVariableFace ? PreviewMetrics.variableBadgeReserve : 0)
+                + (display.hasVariableFace ? PreviewMetrics.variableBadgeReserve : 0)
         )
         .frame(height: rowHeight)
         .overlay(alignment: .trailing) { accessories }
@@ -334,10 +410,10 @@ struct FamilyRow: View, Equatable {
                 .frame(height: 0.5)
         }
         .task(id: loadKey) {
-            guard let face else { return }
+            guard let preview else { return }
             loaded = await FontLoader.shared.font(
-                path: face.path,
-                faceIndex: face.index
+                path: preview.path,
+                faceIndex: preview.faceIndex
             )
             updateLayout()
         }
@@ -349,35 +425,42 @@ struct FamilyRow: View, Equatable {
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                Text(family.name)
+                Text(display.name)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                if family.hasDuplicatePostScriptNames || family.missingFaceCount > 0 {
+                if let warning = display.warning {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
                         .foregroundStyle(.orange)
-                        .help(familyWarning)
+                        .help(warning)
                 }
             }
-            Text(family.countLabel)
+            Text(display.countLabel)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
         .frame(width: 230, alignment: .leading)
     }
 
-    private var preview: some View {
-        Canvas { context, size in
-            guard let loaded, let previewLayout else { return }
-            let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
-            context.withCGContext { cg in
-                PreviewLine.draw(
-                    layout: previewLayout,
-                    font: font,
-                    color: NSColor(textColor),
-                    in: cg,
-                    rect: CGRect(origin: .zero, size: size)
-                )
+    private var previewCanvas: some View {
+        ZStack(alignment: .leading) {
+            Canvas { context, size in
+                guard let loaded, let previewLayout else { return }
+                let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
+                context.withCGContext { cg in
+                    PreviewLine.draw(
+                        layout: previewLayout,
+                        font: font,
+                        color: NSColor(textColor),
+                        in: cg,
+                        rect: CGRect(origin: .zero, size: size)
+                    )
+                }
+            }
+            if preview == nil {
+                Text(display.name)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.tertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -394,33 +477,22 @@ struct FamilyRow: View, Equatable {
 
     private var accessories: some View {
         HStack(spacing: PreviewMetrics.accessorySpacing) {
-            if family.hasVariableFace {
+            if display.hasVariableFace {
                 Text("VF")
                     .font(.system(size: PreviewMetrics.badgeFontSize, weight: .semibold))
                     .padding(.horizontal, PreviewMetrics.badgeHorizontalPadding)
                     .padding(.vertical, PreviewMetrics.badgeVerticalPadding)
                     .background(.quaternary, in: Capsule())
             }
-            ActivationDot(state: activation, action: onToggle)
+            HostActivationControl(phase: control, action: onToggle)
         }
         .padding(.trailing, PreviewMetrics.rowHorizontalInset)
-    }
-
-    private var familyWarning: String {
-        var reasons: [String] = []
-        if family.hasDuplicatePostScriptNames {
-            reasons.append("Multiple files share a PostScript name")
-        }
-        if family.missingFaceCount > 0 {
-            reasons.append("\(family.missingFaceCount) file(s) missing")
-        }
-        return reasons.joined(separator: ". ")
     }
 
     /// Size is deliberately not part of the key: it changes per slider tick and
     /// must not reload the face or blank the preview.
     private var loadKey: String {
-        "\(face?.path ?? ""):\(face?.index ?? 0)"
+        "\(preview?.path ?? ""):\(preview?.faceIndex ?? 0)"
     }
 
     /// Everything that changes the preview line breaks or vertical placement.
@@ -436,8 +508,8 @@ struct FamilyRow: View, Equatable {
 
     private var layoutKey: LayoutKey {
         LayoutKey(
-            path: face?.path ?? "",
-            faceIndex: face?.index ?? 0,
+            path: preview?.path ?? "",
+            faceIndex: preview?.faceIndex ?? 0,
             text: sampleText,
             size: sampleSize,
             maxLines: maxLines,
@@ -467,44 +539,50 @@ struct FamilyRow: View, Equatable {
     }
 
     static func == (left: FamilyRow, right: FamilyRow) -> Bool {
-        left.family == right.family
-            && left.face?.path == right.face?.path
-            && left.face?.index == right.face?.index
+        left.display == right.display
+            && left.preview == right.preview
             && left.sampleText == right.sampleText
             && left.sampleSize == right.sampleSize
             && left.textColor == right.textColor
             && left.backgroundColor == right.backgroundColor
-            && left.activation == right.activation
+            && left.control == right.control
             && left.maxLines == right.maxLines
             && left.rowHeight == right.rowHeight
     }
 }
 
 struct FamilyTile: View, Equatable {
-    let family: CatalogFamily
-    let face: CatalogFace?
+    let display: FamilyDisplay
+    let preview: PreviewSource?
     let sampleText: String
     let sampleSize: Double
     let textColor: Color
     let backgroundColor: Color
-    let activation: FamilyActivation
+    let control: HostControlPhase
     let onToggle: () -> Void
 
     @State private var loaded: LoadedFont?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Canvas { context, size in
-                guard let loaded else { return }
-                let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
-                context.withCGContext { cg in
-                    PreviewLine.drawGrid(
-                        text: sampleText,
-                        font: font,
-                        color: NSColor(textColor),
-                        in: cg,
-                        rect: CGRect(origin: .zero, size: size)
-                    )
+            ZStack {
+                Canvas { context, size in
+                    guard let loaded else { return }
+                    let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
+                    context.withCGContext { cg in
+                        PreviewLine.drawGrid(
+                            text: sampleText,
+                            font: font,
+                            color: NSColor(textColor),
+                            in: cg,
+                            rect: CGRect(origin: .zero, size: size)
+                        )
+                    }
+                }
+                if preview == nil {
+                    Text(display.name)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.tertiary)
                 }
             }
             .frame(height: 140)
@@ -512,19 +590,15 @@ struct FamilyTile: View, Equatable {
             Divider()
 
             HStack {
-                Text(family.name)
+                Text(display.name)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                 Spacer()
-                Text(
-                    family.hasDuplicatePostScriptNames
-                        ? "\(family.faceCount) files"
-                        : "\(family.faceCount)"
-                )
+                Text(display.shortCount)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .help(family.countLabel)
-                ActivationDot(state: activation, action: onToggle)
+                    .help(display.countLabel)
+                HostActivationControl(phase: control, action: onToggle)
             }
         }
         .padding(20)
@@ -535,27 +609,26 @@ struct FamilyTile: View, Equatable {
                 .stroke(Color.previewDivider(on: backgroundColor), lineWidth: 1)
         )
         .task(id: loadKey) {
-            guard let face else { return }
+            guard let preview else { return }
             loaded = await FontLoader.shared.font(
-                path: face.path,
-                faceIndex: face.index
+                path: preview.path,
+                faceIndex: preview.faceIndex
             )
         }
     }
 
     private var loadKey: String {
-        "\(face?.path ?? ""):\(face?.index ?? 0)"
+        "\(preview?.path ?? ""):\(preview?.faceIndex ?? 0)"
     }
 
     static func == (left: FamilyTile, right: FamilyTile) -> Bool {
-        left.family == right.family
-            && left.face?.path == right.face?.path
-            && left.face?.index == right.face?.index
+        left.display == right.display
+            && left.preview == right.preview
             && left.sampleText == right.sampleText
             && left.sampleSize == right.sampleSize
             && left.textColor == right.textColor
             && left.backgroundColor == right.backgroundColor
-            && left.activation == right.activation
+            && left.control == right.control
     }
 }
 
