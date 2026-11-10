@@ -59,7 +59,8 @@ These are the facts the design rests on. Verify before changing any of them.
 - Duplicate PostScript names across different files are **not** reliably
   rejected. A second file with the same PostScript name registered cleanly in
   the Phase 0 spike. fontd will not solve conflicts for us: detect them and warn
-  before activating both.
+  before activating both. The UI disables every non-active face whose PostScript
+  name is already active and names the active file path.
 - Registration is per-file: about 2 ms per font once warm, and the first call in
   a process pays a fontd start cost. Measure with `scripts/register-spike.sh`;
   do not copy numbers from here.
@@ -75,10 +76,18 @@ These are the facts the design rests on. Verify before changing any of them.
 - Re-parsing a changed file must preserve activation rows: face IDs are stable,
   so capture them before the face delete and reinsert after the insert.
 - Fonts under `/System/Library/Fonts`, `/Library/Fonts` or
-  `~/Library/Fonts` are installed, not ours. Skip them in the engine and show a
-  lock in the UI; never unregister them.
-- Toggling is family-level in the UI. Activating a family registers each of its
-  files once and journals every face.
+  `~/Library/Fonts` are installed, not ours, but only while the file exists.
+  Check `fileStatus == "ok"` first: a missing FontBase copy must show as missing,
+  not installed. Skip installed files in the engine and show a gray checked
+  square at the same size as the activation square; never unregister them.
+- Toggling is family-level for ordinary families. A family with duplicate
+  PostScript names has no single family-level meaning: its checkbox toggles the
+  preferred file in context, and the sheet exposes one checkbox per file. If
+  that preferred file is blocked by an active owner elsewhere, the row shows a
+  disabled square and the sheet names the owner path.
+- The representative face prefers a readable file in the current folder or
+  subfolder, then an active face, then a regular face. Never select a missing
+  file for the row or sheet preview.
 - Preview never registers anything. `CTFontManagerCreateFontDescriptorsFromURL`
   plus `CTFontCreateWithFontDescriptor` is enough, and it is process-local.
   Variable fonts return one descriptor per named instance, so dedupe descriptors;
@@ -107,33 +116,59 @@ These are the facts the design rests on. Verify before changing any of them.
   measurement, not an opinion. The spike does not capture SwiftUI's Core
   Animation commit, so Phase 2 re-measures the real browser with signposts.
 - Grid tiles are drawn live; only a bounded `NSCache` of recent tiles is kept.
-  No per-font preview files on disk by default.
-- The browser is `ScrollView` + `LazyVStack` with uniform rows: 128 pt normally,
-  176 pt for mid-length samples and 224 pt for the full alphabet preset (four
-  lines). Row height changes only when the sample text does. Each row has an
-  `@State` `LoadedFont`, loaded through `FontLoader.shared`. A row's
-  `.task(id:)` keys on path and face index only; size changes never reload.
+  No per-font preview files on disk by default. Columns follow the window width
+  with a 280 pt minimum tile and a hard cap of four. Tiles are 240 pt tall with a
+  140 pt preview area.
+- The browser is `ScrollView` + `LazyVStack` with uniform rows. Base heights are
+  128 pt normally, 176 pt for mid-length samples and 224 pt for the full alphabet
+  preset (four lines). Above the base, the height is estimated from the measured
+  preview width and sample size: one line gets 8 pt of padding, wrapped lines get
+  12 pt, quantized to 8 pt steps. A single large line therefore does not carry a
+  second line's empty space. The line budget is 2 lines up to 48 characters and
+  4 above; it is not derived from the dynamic height. Each row has an `@State`
+  `LoadedFont`, loaded through `FontLoader.shared`. A row's `.task(id:)` keys on
+  path and face index only; size changes relayout but never reload the font.
 - List rows wrap with a typesetter and measure line ink bounds, so display faces
   with ink past their metrics do not overlap. Text space is y-up: a line's ink
   ascent is `bounds.maxY`, descent is `-bounds.minY`. Getting that backwards
   makes text grow upward when the size increases.
 - Wrapped text centers when it fits and pins to the top (6 pt) when it does not,
   so overflow clips at the bottom rather than above the row. Grid tiles stay
-  single-line and fitted.
+  single-line: they honor the sample size, shrink only when one line is taller
+  than the tile, and truncate horizontally. Truncation uses ASCII `...` because
+  some display fonts map U+2026 to a decorative or "NO GLYPH" stamp.
+- `PreviewLine.Layout` is the only owner of line breaks and vertical placement.
+  A row caches it per face, sample, size and measured width; the Canvas draws
+  that layout. The family metadata's first text baseline is aligned to the first
+  preview line through the `.previewBaseline` alignment guide, not by centering
+  two independent stacks.
+- Activation controls, hit targets and the VF badge all read
+  `PreviewMetrics.controlScale`. Change that one value to resize them together;
+  do not reintroduce size literals in `ActivationDot`, `FaceActivationControl`
+  or row accessories.
 - Sorting uses the displayed family name, after system dot stripping, not the
   raw grouping key. Otherwise Apple's dot-prefixed names sort before letters.
 - Presets live in `PreviewPreset` and only change the sample text. Size is a
-  separate control in the status bar and never tied to a preset. It cannot live
-  in the toolbar: macOS 26/27 draws toolbar sliders untinted (gray) even with
-  `.tint` or a native `trackFillColor`, while content sliders keep the accent.
-  Missing characters map to glyph 0 (.notdef); no crash path is needed.
+  separate control in the status bar and never tied to a preset; its range is
+  12-108 pt. It cannot live in the toolbar: macOS 26/27 draws toolbar sliders
+  untinted (gray) even with `.tint` or a native `trackFillColor`, while content
+  sliders keep the accent.
+- Previews never use CoreText font fallback. `PreviewLine` draws primary runs
+  normally and replaces every fallback run with the primary font's glyph 0
+  (`.notdef`) at the run's positions. An empty or self-only cascade list does not
+  suppress CoreText fallback; do not rely on it. Custom text with unsupported
+  characters shows tofu, never another font.
 - `--headless browser` renders the real window offscreen, captures it with
   `cacheDisplay`, and proves the process never activates. Use it to check layout
   and glyph orientation; use a real window for frame timing. `--grid` and
   `--query` select the other view and a search term; `--warnings` opens the
-  Warnings page and waits for its rows; `--active` selects the Active list.
-  `--headless add-files` exercises the individual file add against a temporary
-  database.
+  Warnings page and waits for its rows; `--active` selects the Active list;
+  `--google` selects the Google Fonts host. `--family NAME` picks the detail
+  page family; `--text TEXT` overrides the preview sample. `--headless add-files`
+  exercises the individual file add against a temporary database,
+  `--headless ignore-folder` exercises folder exclusion and missing-entry
+  cleanup against a temporary database, and `--headless settings` renders the
+  Settings window with the real ignore list.
 - Sidebar selection uses an enum, never an optional ID. A `nil` tag is SwiftUI's
   "no selection" and makes the All Fonts row unselectable.
 - Detail content and the status bar are a pinned `VStack`. `safeAreaInset` lets
@@ -148,12 +183,17 @@ These are the facts the design rests on. Verify before changing any of them.
 - `--headless scroll [--query ...] [--rows]` measures the real browser list
   offscreen. `--rows` moves one row per step, which matches normal scrolling;
   without it the driver jumps across the list and measures worst-case row churn.
-- Grid tiles fit the whole sample by shrinking it. List rows truncate with an
-  ellipsis. Both inset horizontally so italic overhangs survive.
-- The family sheet renders the large preview through `PreviewLine.drawFitted`
-  and derives axis variations with `CTFontDescriptorCreateCopyWithAttributes` +
-  `kCTFontVariationAttribute`. `CTFontCreateCopyWithAttributes` takes a
-  descriptor, not an attribute dictionary.
+- Grid tiles honor the sample size, shrink only for tile height and truncate
+  horizontally. List rows wrap and truncate with ASCII periods. Both inset
+  horizontally so italic overhangs survive.
+- The family sheet renders the large preview through `PreviewLine.drawTruncated`
+  at a fixed point size and derives axis variations with
+  `CTFontDescriptorCreateCopyWithAttributes` + `kCTFontVariationAttribute`.
+  `CTFontCreateCopyWithAttributes` takes a descriptor, not an attribute
+  dictionary.
+- Family detail lists every face's absolute path and marks a shared PostScript
+  name with an orange triangle plus a note. Filenames are not identity: a
+  mislabeled file still belongs to the family named in its `name` table.
 - The glyph map comes from `CTFontCopyCharacterSet` over the face's own cmap,
   scanning code points up to U+2FFFF and skipping controls. Nothing is indexed;
   it runs when the sheet opens and works for inactive fonts.
@@ -168,9 +208,10 @@ These are the facts the design rests on. Verify before changing any of them.
 
 ### Indexing
 
-- Read each font file once. The parser reads `head`, `hhea`, `OS/2`, `name` and
-  `fvar` today. `STAT`, `cmap` coverage and `GSUB` feature tags are planned;
-  coverage and language filters must not ship before the cmap pass exists.
+- Read each font file once. The main parser reads `head`, `hhea`, `OS/2`, `name`
+  and `fvar`. `STAT` is planned. `cmap` coverage is a separate manual pass;
+  GSUB/GPOS feature tags are read on demand. Language filters wait for a
+  language-level coverage pass.
 - CoreText gives localized names and descriptors. The SFNT reader supplies
   PANOSE, `fvar` axes and normalized metrics; nothing else yet.
 - Change detection is `path -> (inode, size, mtimeNanos, parseVersion, status)`.
@@ -192,7 +233,8 @@ These are the facts the design rests on. Verify before changing any of them.
   scroll tick made SwiftUI diff thousands of rows and was the search-result lag.
 - Collections store face IDs, not family IDs. A family is in a collection when
   any of its faces is. Missing files keep their faces, so collection membership
-  survives an offline volume. Counts are cached per collection.
+  survives an offline volume. Counts are cached per collection. The collection
+  menu activates or deactivates all stored faces in bulk.
 - Active is a selection scope over the activation journal, not a folder. It
   lists families with any active face and counts active faces; changing the
   journal invalidates the visible cache. Installed system fonts never appear.
@@ -200,7 +242,8 @@ These are the facts the design rests on. Verify before changing any of them.
   keystroke scans bytes instead of graphemes.
 - Settings export is `LibraryConfiguration`, versioned JSON. Collections store
   PostScript names, not face IDs, so a file survives a different folder layout.
-  Version is checked on import; never silently accept a newer file.
+  Version is checked on import; never silently accept a newer file. Ignored
+  folder paths travel with the settings and are re-applied on import.
 - Sidebar counts are fonts (faces), matching All Fonts. File counts belong in
   tooltips; file and face counts differ for TTC/OTC files.
 - User-facing text says "fonts", never "faces". A face is the stored unit; a
@@ -220,6 +263,10 @@ These are the facts the design rests on. Verify before changing any of them.
   stem, then full name, then PostScript name; punctuation-only styles become
   `Regular`. This happens at snapshot build, so the setting applies without a
   rescan.
+- Families group by metadata, never by filename. A file can carry another font's
+  name table; show each face's absolute path in the detail page and mark shared
+  PostScript names. Do not treat differing filenames as a cache leak or rewrite
+  the font.
 - A family whose name has no Latin letters displays
   `<local name> (<Latin label>)` and sorts under the Latin label. The label is
   the PostScript family prefix, then the file stem. The grouping key stays the
@@ -227,6 +274,36 @@ These are the facts the design rests on. Verify before changing any of them.
 - The sidebar folder tree is built from indexed paths, not a directory walk.
   Roots are added folders; children exist only where a file lives. Selection is
   a path prefix, so a collapsed root and an expanded child stay consistent.
+  Hosts precede Folders in the sidebar. Ignored subtrees are kept as rows with an
+  `eye.slash` icon so an exclusion is visible and reversible.
+- Nested roots are allowed. The deepest indexed root owns each file: scanning a
+  nested root adopts rows from every ancestor, and scanning a parent skips
+  subtrees owned by a deeper root. Removing a nested root re-parents its rows to
+  the deepest remaining ancestor, or deletes them if none. Adding a folder that
+  is already covered, contained by, or overlapping another root warns first but
+  still proceeds.
+- Ignoring a folder stores its resolved path in `excluded_path`, deactivates and
+  deletes the file rows under it, and makes the scanner skip that subtree. Font
+  files are never touched. The row stays in the sidebar; Stop Ignoring rescans
+  every affected root. This is how a manager cache nested inside a watched folder
+  is hidden without special-casing a directory name. Like removal, the exclusion
+  aborts if a deactivation is not confirmed.
+- Settings → Ignored Folders is the global editor for the same list: add via
+  panel, remove to restore, with help text. Font-manager caches come from
+  `FontManagerCacheDetecting` implementations in `UrFontsCore/FontManagers`.
+  FontBase detects its config folder plus `~/Library/Fonts/FontBase` and
+  `/Library/Fonts/FontBase`, and the suggestion disappears once the cache is
+  ignored or covered by an ignored parent. Add new managers by adding a detector
+  to `FontManagerDetectors.all`; the settings UI stays manager-agnostic.
+- The sidebar is a native `List` with `OutlineGroup`. Drag reordering was
+  removed: `List`/`OutlineGroup` swallow row drag and drop on macOS. Folder
+  reorder is the context-menu Move Up/Move Down actions over `sort_order`.
+- Sidebar root order is `folder.sort_order`. New folders get `max + 1`, so they
+  land at the bottom. The managed Google folder sits after the visible roots
+  and stays hidden.
+- A clean install seeds `/Library/Fonts`, `~/Library/Fonts` and
+  `/System/Library/Fonts` in that order, watched. Existing installs promote those
+  paths to the top and keep them watched until the user opts out.
 - Individual file adds group by parent directory. Files already inside an
   indexed folder join that folder (longest matching path); other files get a
   one-time folder for their directory so the tree can reveal them. A Finder
@@ -234,7 +311,9 @@ These are the facts the design rests on. Verify before changing any of them.
 - The Warnings page reports live duplicate PostScript names and files whose
   status is not `ok`. Duplicates only count `ok` files; a missing duplicate is
   noise. Warning types are collapsed `DisclosureGroup`s so the page reads as a
-  summary; nothing on the page deletes or moves a file.
+  summary. Remove Missing Entries deletes only the stale rows, after
+  confirmation, because collection membership goes with them. No file on disk
+  is deleted or moved.
 - System fonts are faces under `/System/Library/Fonts`. `/Library/Fonts` and
   `~/Library/Fonts` are user-installed, not system. The `showSystemFonts`
   setting (default on) hides a family only when every face is a system font.
@@ -242,26 +321,35 @@ These are the facts the design rests on. Verify before changing any of them.
   for display only when the whole family is a system family; never change the
   grouping key.
 - Coverage is a second, manual pass. `cmap` formats 4 and 12 produce a script
-  mask plus exact codepoint ranges per face (`face.script_mask`,
-  `face.coverage_ranges`; either NULL means pending). It is not part of the main
-  scan because reading the whole library again is expensive and cloud folders can
-  block. `CoverageIndexer` batches it; the filter popover owns the Index Coverage
+  mask, a full-sample preview mask, and exact codepoint ranges per face
+  (`face.script_mask`, `face.preview_mask`, `face.coverage_ranges`; script/ranges
+  NULL means pending). `preview_mask` is set only when every scalar of that
+  script's sample is covered. It is not part of the main scan because reading the
+  whole library again is expensive and cloud folders can block.
+  `CoverageIndexer` batches it; the filter popover owns the Index Coverage
   action.
 - Character filters load ranges lazily on first use and cache them; the cache is
   dropped when the library or coverage changes. Ranges are treated as coverage,
   so a sparse format 4 segment can over-report. Say so in the UI before
   promising exactness.
 - Script-aware previews prefer a distinctive script (CJK, Hangul, Kana, Arabic,
-  Hebrew, Devanagari, Thai) when the family covers it. Latin and Latin-plus-
-  Greek/Cyrillic families keep the user's sample.
+  Hebrew, Devanagari, Thai) only when a readable face covers every character of
+  that script's sample (`preview_mask`). Partial coverage keeps the user sample.
+  `script_mask` remains the any-coverage filter; missing faces contribute to
+  neither mask. This prevents CoreText fallback from selecting an Arabic sample
+  the font only partly covers.
 - Cloud file providers are not ordinary folders. Scanning an online-only
   Dropbox root stalled indefinitely because reading a placeholder blocks on the
   provider. Detect dataless files before opening them, skip and report them, and
   never scan a provider root by default.
-- Paths must be canonical before they are compared. Foundation does not resolve
+- Paths must be resolved before they are compared. Foundation does not resolve
   the `/var` firmlink (`resolvingSymlinksInPath` leaves it), but FileManager and
-  FSEvents return `/private/var/...`. The scanner uses `realpath`; without it
-  every watched-file delta looks like a new file.
+  FSEvents return `/private/var/...`. User boundaries (folder add, ignore list,
+  settings import, CLI arguments) use `LibraryPath.resolve`, which expands `~`,
+  trims whitespace and calls `realpath`. Scanner and watcher store canonical
+  paths. `LibraryPath.relation` is the only owner of same/ancestor/descendant
+  checks; do not compare with ad-hoc string prefixes. Without this every
+  watched-file delta looks like a new file and `~/Fonts` duplicates `/Users/...`.
 - The watcher reports `(root, changed path)` pairs. A file event triggers a
   delta scan of those paths only; a directory event triggers a folder scan. A
   five-minute sweep covers missed events. There is no event replay across app
@@ -270,8 +358,9 @@ These are the facts the design rests on. Verify before changing any of them.
   must never touch the directory on disk.
 - Turning watching on is a full rescan and is confirmed by the user first.
   Turning it off stops the watcher and keeps every file and activation row.
-- Removing a folder deactivates its active faces before deleting rows; otherwise
-  fonts stay registered with no journal entry to turn them off.
+- Removing a folder deactivates its active faces before deleting rows, and
+  aborts if fontd does not confirm; otherwise fonts stay registered with no
+  journal entry to turn them off.
 - `urfonts-cli split-folder <old> <child>...` moves existing file rows into
   subfolders by path prefix, then deletes the old folder. Use it instead of a
   rescan when a provider root was indexed and should become its subfolders.
@@ -284,6 +373,9 @@ These are the facts the design rests on. Verify before changing any of them.
 - Downloads live in `Application Support/Ur Fonts/GoogleFonts/Fonts`, indexed as
   a `.managed` folder that never appears in the sidebar. Licenses are saved next
   to the fonts.
+- The catalog is the Hosts → Google Fonts sidebar selection, rendered inline.
+  There is no toolbar globe or sheet; downloaded families join the same library
+  and Active scopes as local fonts.
 - Settings export excludes managed folders; Google downloads are re-fetchable,
   not user configuration.
 - GitHub's unauthenticated limit is 60 requests/hour. Refresh uses the cache
@@ -330,22 +422,24 @@ Planned. Nothing in this section is implemented yet.
 
 ```
 Sources/UrFontsCore          no UI, every public type Sendable
-  FontKit/                   head, hhea, OS/2, name, fvar
-                             (STAT, cmap, GSUB planned)
+  FontKit/                   head, hhea, OS/2, name, fvar, cmap coverage,
+                             GSUB/GPOS tags (STAT planned)
   Scanner/                   walk, stamps, parallel parse, delta sets
   Watch/                     FSEvents per folder, fallback sweep
   Catalog/                   GRDB store, migrations, snapshot, search index
   Activation/                engine, registrar protocol, journal, reconcile
   Coverage/                  batched cmap script index (manual)
   GoogleFonts/               catalog, tree, downloads
+  FontManagers/              cache detectors (FontBase today)
   Preview/                   FontLoader LRU, CTLine and tile drawing
-  Metrics/                   planned: contrast, classification, coverage
+  Metrics/                   planned: contrast, classification
   Documents/                 planned: IDML, INDD, AI, PDF, PSD extraction
   Sync/                      planned: user-data export and merge
 Sources/UrFonts              SwiftUI app, MainActor by default
-  App/                       commands, model, headless harness
-  Sidebar/ Browser/ FontPage/ Info/ Windows/ Settings/ Components/
-                             (Info, Windows, Settings, Components planned)
+  App/                       commands, model, folder tree, headless harness
+  Settings/                  Settings scene, ignored folders
+  Sidebar/ Browser/ FontPage/ Providers/ Components/ Spikes/
+                             (Info, Windows planned)
 Sources/urfonts-cli          index, search, folders, activation, headless
 BENCH.md                     planned: competitor and regression measurements
 Tests/UrFontsCoreTests       parser, scanner, catalog, activation with fakes
@@ -375,6 +469,7 @@ field listed here that the store does not have.
 
 ```
 folder(id, path, kind static|watched, added_at, last_scan_at, last_event_id, available)
+excluded_path(path, added_at)
 file(id, folder_id, path, volume_id, inode, size, mtime_ns, parse_version,
      face_count, status ok|missing|damaged, first_seen, last_seen)
 face(id, file_id, face_index, postscript_name, family_name, style_name, full_name,
@@ -459,20 +554,21 @@ Measured on the large fixture library. These are gates, not aspirations.
 ## Testing
 
 - Unit tests colocated by module in `Tests/UrFontsCoreTests`.
-- The scanner and catalog are tested against the generated large fixture, not a
-  hand-written sample of ten.
+- The scanner and catalog unit tests use generated fixtures; the large fixture
+  drives the headless benchmarks and manual cold-index checks. A tiny fixture
+  does not prove the full-scale path.
 - Activation has two layers: a fake registrar for state machine tests, and an
   opt-in real test that registers and unregisters one known font.
 - Headless scenarios cover the app wiring. A scenario must fail when the command
   seam is sabotaged.
-- Golden images cover previews at fixed scale, light and dark, Latin and CJK.
+- Golden-image previews at fixed scale, light/dark and Latin/CJK are planned in
+  `Tests/UrFontsSnapshotTests`; they do not run yet.
 
 ### Traps that produce false green
 
 - A focus test that asserts nothing about focus proves nothing. Assert
   `NSApp.isActive == false` explicitly.
 - A benchmark that runs in Debug is not the build users run. Measure Release.
-- A tiny fixture does not exercise the full-scale row path.
 - A sabotage that does not compile reads as zero failures. Every sabotage must
   prove the suite still builds.
 - A test that reads a snapshot instead of the drawn frame verifies the snapshot.

@@ -11,7 +11,6 @@ struct BrowserView: View {
     @State private var collectionFamily: CatalogFamily?
     @State private var newCollectionName = ""
     @State private var showNewCollection = false
-    @State private var showGoogleFonts = false
 
     // Scroll position is cached per sidebar item and view mode. Restoring by
     // family id survives row heights, but never shares an offset between
@@ -35,7 +34,9 @@ struct BrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if model.selection == .problems {
+                if model.selection == .googleFonts {
+                    GoogleFontsView(model: model)
+                } else if model.selection == .problems {
                     ProblemsView(model: model)
                 } else if model.isLoading {
                     ProgressView("Loading library…")
@@ -60,9 +61,6 @@ struct BrowserView: View {
         .toolbar { toolbar }
         .sheet(item: $detail) { family in
             FamilyDetailView(model: model, family: family)
-        }
-        .sheet(isPresented: $showGoogleFonts) {
-            GoogleFontsView(model: model)
         }
         .alert("New Collection", isPresented: $showNewCollection) {
             TextField("Name", text: $newCollectionName)
@@ -116,59 +114,92 @@ struct BrowserView: View {
     private var browser: some View {
         switch model.viewMode {
         case .list:
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(model.visibleFamilies) { family in
-                        FamilyRow(
-                            family: family,
-                            face: model.representativeFace(for: family),
-                            sampleText: model.sampleText(for: family),
-                            sampleSize: model.sampleSize,
-                            textColor: model.textColor,
-                            backgroundColor: model.backgroundColor,
-                            activation: model.familyActivation(family),
-                            onToggle: { Task { await model.toggle(family) } },
-                            maxLines: model.previewMaxLines,
-                            rowHeight: model.previewRowHeight
-                        )
-                        .equatable()
-                        .contentShape(Rectangle())
-                        .onTapGesture { detail = family }
-                        .contextMenu { contextMenu(for: family) }
+            GeometryReader { proxy in
+                let rowHeight = model.previewRowHeight(
+                    previewWidth: listPreviewWidth(for: proxy.size.width)
+                )
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(model.visibleFamilies) { family in
+                            FamilyRow(
+                                family: family,
+                                face: model.representativeFace(for: family),
+                                sampleText: model.sampleText(for: family),
+                                sampleSize: model.sampleSize,
+                                textColor: model.textColor,
+                                backgroundColor: model.backgroundColor,
+                                activation: model.familyActivation(family),
+                                onToggle: { Task { await model.toggle(family) } },
+                                maxLines: model.previewMaxLines,
+                                rowHeight: rowHeight
+                            )
+                            .equatable()
+                            .contentShape(Rectangle())
+                            .onTapGesture { detail = family }
+                            .contextMenu { contextMenu(for: family) }
+                        }
                     }
+                    .scrollTargetLayout()
+                    .padding(.vertical, 4)
                 }
-                .scrollTargetLayout()
-                .padding(.vertical, 4)
+                .scrollPosition(id: $topFamilyID, anchor: .top)
             }
-            .scrollPosition(id: $topFamilyID, anchor: .top)
         case .grid:
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 260, maximum: 340), spacing: 12)],
-                    spacing: 12
-                ) {
-                    ForEach(model.visibleFamilies) { family in
-                        FamilyTile(
-                            family: family,
-                            face: model.representativeFace(for: family),
-                            sampleText: model.sampleText(for: family),
-                            sampleSize: model.sampleSize,
-                            textColor: model.textColor,
-                            backgroundColor: model.backgroundColor,
-                            activation: model.familyActivation(family),
-                            onToggle: { Task { await model.toggle(family) } }
-                        )
-                        .equatable()
-                        .contentShape(Rectangle())
-                        .onTapGesture { detail = family }
-                        .contextMenu { contextMenu(for: family) }
+            GeometryReader { proxy in
+                ScrollView {
+                    LazyVGrid(
+                        columns: gridColumns(for: proxy.size.width),
+                        spacing: 12
+                    ) {
+                        ForEach(model.visibleFamilies) { family in
+                            FamilyTile(
+                                family: family,
+                                face: model.representativeFace(for: family),
+                                sampleText: model.sampleText(for: family),
+                                sampleSize: model.sampleSize,
+                                textColor: model.textColor,
+                                backgroundColor: model.backgroundColor,
+                                activation: model.familyActivation(family),
+                                onToggle: { Task { await model.toggle(family) } }
+                            )
+                            .equatable()
+                            .contentShape(Rectangle())
+                            .onTapGesture { detail = family }
+                            .contextMenu { contextMenu(for: family) }
+                        }
                     }
+                    .scrollTargetLayout()
+                    .padding(16)
                 }
-                .scrollTargetLayout()
-                .padding(16)
+                .scrollPosition(id: $topFamilyID, anchor: .top)
             }
-            .scrollPosition(id: $topFamilyID, anchor: .top)
         }
+    }
+
+    /// Four columns at most. Below that the count follows the available width,
+    /// so tiles never get narrower than the readable minimum.
+    private func gridColumns(for width: CGFloat) -> [GridItem] {
+        let spacing: CGFloat = 12
+        let horizontalPadding: CGFloat = 32
+        let minimumTile: CGFloat = 280
+        let available = max(1, width - horizontalPadding)
+        let fitting = Int((available + spacing) / (minimumTile + spacing))
+        let count = min(4, max(1, fitting))
+        return Array(
+            repeating: GridItem(.flexible(), spacing: spacing),
+            count: count
+        )
+    }
+
+    /// Width left for the preview after the metadata column and the widest
+    /// trailing accessories. One height serves every row, so reserve the VF
+    /// badge even when the current family lacks it.
+    private func listPreviewWidth(for rowWidth: CGFloat) -> CGFloat {
+        let fixed = PreviewMetrics.rowHorizontalInset + 230 + 16
+            + PreviewMetrics.rowHorizontalInset
+            + PreviewMetrics.rowTrailingInset
+            + PreviewMetrics.variableBadgeReserve
+        return max(1, rowWidth - fixed)
     }
 
     private var emptyState: some View {
@@ -226,57 +257,53 @@ struct BrowserView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button { showGoogleFonts = true } label: {
-                Label("Google Fonts", systemImage: "globe")
-            }
-            .help("Browse and download Google Fonts")
-        }
-        ToolbarItem(placement: .primaryAction) {
             Button { Task { await model.rescanAll() } } label: {
                 Label("Rescan", systemImage: "arrow.clockwise")
             }
             .help("Rescan every folder")
         }
-        ToolbarItem(placement: .primaryAction) {
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search", text: $model.query)
-                    .textFieldStyle(.plain)
-                    .frame(width: 180)
-                if !model.query.isEmpty {
-                    Button { model.query = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
+        if model.selection != .googleFonts && model.selection != .problems {
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search", text: $model.query)
+                        .textFieldStyle(.plain)
+                        .frame(width: 180)
+                    if !model.query.isEmpty {
+                        Button { model.query = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Picker("View", selection: $model.viewMode) {
-                Image(systemName: "list.bullet").tag(BrowserViewMode.list)
-                Image(systemName: "square.grid.2x2").tag(BrowserViewMode.grid)
+            ToolbarItem(placement: .primaryAction) {
+                Picker("View", selection: $model.viewMode) {
+                    Image(systemName: "list.bullet").tag(BrowserViewMode.list)
+                    Image(systemName: "square.grid.2x2").tag(BrowserViewMode.grid)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 90)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 90)
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button { showFilters = true } label: {
-                Label(
-                    "Filters",
-                    systemImage: model.filter.isActive || !model.showSystemFonts
-                        ? "line.3.horizontal.decrease.circle.fill"
-                        : "line.3.horizontal.decrease.circle"
-                )
-            }
-            .help("Filter fonts")
-            .popover(isPresented: $showFilters, arrowEdge: .bottom) {
-                FilterView(model: model)
+            ToolbarItem(placement: .primaryAction) {
+                Button { showFilters = true } label: {
+                    Label(
+                        "Filters",
+                        systemImage: model.filter.isActive || !model.showSystemFonts
+                            ? "line.3.horizontal.decrease.circle.fill"
+                            : "line.3.horizontal.decrease.circle"
+                    )
+                }
+                .help("Filter fonts")
+                .popover(isPresented: $showFilters, arrowEdge: .bottom) {
+                    FilterView(model: model)
+                }
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -310,11 +337,12 @@ struct BrowserView: View {
 
     @ViewBuilder
     private func contextMenu(for family: CatalogFamily) -> some View {
+        let activation = model.familyActivation(family)
         Button("Show Details") { detail = family }
-        Button(model.familyActivation(family) == .all ? "Deactivate" : "Activate") {
+        Button(activation == .all ? "Deactivate" : "Activate") {
             Task { await model.toggle(family) }
         }
-        .disabled(model.familyActivation(family) == .installed)
+        .disabled(!activation.canToggle)
         Menu("Add to Collection") {
             ForEach(model.collections) { collection in
                 Button(
@@ -354,7 +382,7 @@ struct BrowserView: View {
             Spacer()
             HStack(spacing: 6) {
                 Text("Aa")
-                AccentSlider(value: $model.sampleSize, range: 12...72)
+                AccentSlider(value: $model.sampleSize, range: 12...108)
                     .frame(width: 100)
                     .accessibilityLabel("Preview size")
                 Text("\(Int(model.sampleSize))")

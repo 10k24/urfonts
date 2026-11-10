@@ -6,7 +6,6 @@ import Foundation
 /// CoreText fonts are immutable once created; the wrapper only tells Swift that.
 public struct LoadedFont: @unchecked Sendable {
     public let ctFont: CTFont
-    public let postscriptName: String
 }
 
 /// Creates preview fonts straight from files, without registration.
@@ -46,8 +45,7 @@ public actor FontLoader {
         let table = descriptors(for: path)
         guard faceIndex >= 0, faceIndex < table.count else { return nil }
         let ctFont = CTFontCreateWithFontDescriptor(table[faceIndex], Self.baseSize, nil)
-        let name = CTFontCopyPostScriptName(ctFont) as String
-        let loaded = LoadedFont(ctFont: ctFont, postscriptName: name)
+        let loaded = LoadedFont(ctFont: ctFont)
 
         cache[key] = loaded
         order.append(key)

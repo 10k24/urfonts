@@ -110,6 +110,21 @@ struct LibraryTests {
         #expect(fallback.faces.first?.style == "Regular")
     }
 
+    @Test("folders keep insertion order and reorder by id")
+    func folderOrder() throws {
+        let database = try LibraryDatabase(inMemory: true)
+        let first = try database.upsertFolder(path: "/A", kind: .staticFolder)
+        let second = try database.upsertFolder(path: "/B", kind: .staticFolder)
+        let third = try database.upsertFolder(path: "/C", kind: .staticFolder)
+        #expect(try database.folders().map(\.path) == ["/A", "/B", "/C"])
+
+        try database.setFolderOrder([third, second, first])
+        #expect(try database.folders().map(\.path) == ["/C", "/B", "/A"])
+
+        _ = try database.upsertFolder(path: "/D", kind: .watched)
+        #expect(try database.folders().map(\.path) == ["/C", "/B", "/A", "/D"])
+    }
+
     @Test("folder labels rename without touching the path")
     func folderLabel() async throws {
         let root = try makeLibrary(count: 4)
@@ -209,6 +224,51 @@ struct LibraryTests {
         #expect(try database.counts().missing == 1)
     }
 
+    @Test("families expose duplicate PostScript and missing file counts")
+    func duplicateMetadata() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("urfonts-duplicates-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let spec = MinimalFontSpec(
+            family: "Referential Test",
+            style: "Regular",
+            postscriptName: "ReferentialTest-Regular",
+            weightClass: 400,
+            isItalic: false,
+            isBold: false
+        )
+        let first = root.appendingPathComponent("ReferentialTest-A.otf")
+        let second = root.appendingPathComponent("ReferentialTest-B.otf")
+        try MinimalFont.data(for: spec).write(to: first)
+        try MinimalFont.data(for: spec).write(to: second)
+
+        let database = try LibraryDatabase(inMemory: true)
+        let scanner = LibraryScanner(database: database)
+        _ = try await scanner.scan(folder: root)
+
+        let family = try #require(try database.snapshot().families.first)
+        #expect(family.faceCount == 2)
+        #expect(family.hasDuplicatePostScriptNames)
+        #expect(family.missingFaceCount == 0)
+
+        try FileManager.default.removeItem(at: second)
+        _ = try await scanner.scan(folder: root)
+        let after = try #require(try database.snapshot().families.first)
+        #expect(after.faceCount == 2)
+        #expect(!after.hasDuplicatePostScriptNames)
+        #expect(after.missingFaceCount == 1)
+    }
+
+    @Test("canonical paths resolve the /var firmlink")
+    func canonicalPaths() {
+        let path = FileManager.default.temporaryDirectory.path
+        let canonical = LibraryPath.canonical(path)
+        #expect(canonical.hasPrefix("/private/var/"))
+        #expect(LibraryPath.canonical(canonical) == canonical)
+    }
+
     @Test("problems report duplicate PostScript names and missing files")
     func problems() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -227,7 +287,7 @@ struct LibraryTests {
         let second = MinimalFontSpec(
             family: "Beta",
             style: "Regular",
-            postscriptName: "SharedName-Regular",
+            postscriptName: "sharedname-regular",
             weightClass: 400,
             isItalic: false,
             isBold: false
@@ -261,33 +321,139 @@ struct LibraryTests {
         } == ["Beta.ttf"])
     }
 
-    @Test("changed file re-parses, deleted file becomes missing")
-    func changes() async throws {
-        let root = try makeLibrary(count: 8)
+    @Test("ignored folders leave scans and rows, and return when unignored")
+    func ignoredFolders() async throws {
+        let root = try makeLibrary(count: 4)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = root.appendingPathComponent("Caché", isDirectory: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        for index in 4..<6 {
+            let spec = MinimalFontSpec(index: index)
+            try MinimalFont.data(for: spec)
+                .write(to: cache.appendingPathComponent("\(spec.postscriptName).ttf"))
+        }
+
+        let database = try LibraryDatabase(inMemory: true)
+        let scanner = LibraryScanner(database: database)
+        let first = try await scanner.scan(folder: root)
+        #expect(first.scannedFiles == 6)
+
+        let canonicalCache = LibraryPath.canonical(cache.path)
+        try database.ignorePath(canonicalCache)
+        #expect(try database.deleteFiles(under: canonicalCache) == 2)
+        #expect(try database.ignoredPaths() == [canonicalCache])
+
+        let rescan = try await scanner.scan(folder: root)
+        #expect(rescan.scannedFiles == 4)
+        #expect(try database.counts().files == 4)
+
+        let ignoredFile = cache.appendingPathComponent("FixtureFamily00005-Regular.ttf")
+        let delta = try await scanner.scan(
+            changes: [ignoredFile.path],
+            folder: root,
+            kind: .staticFolder
+        )
+        #expect(delta.scannedFiles == 0)
+        #expect(try database.counts().files == 4)
+
+        try database.unignorePath(canonicalCache)
+        _ = try await scanner.scan(folder: root)
+        #expect(try database.counts().files == 6)
+    }
+
+    @Test("missing cleanup deletes only unavailable rows")
+    func removeMissing() async throws {
+        let root = try makeLibrary(count: 4)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let database = try LibraryDatabase(inMemory: true)
         let scanner = LibraryScanner(database: database)
         _ = try await scanner.scan(folder: root)
+        let collectionID = try database.createCollection(name: "Keep")
+        try database.addFaces(
+            try database.snapshot().faces.map(\.id),
+            toCollection: collectionID
+        )
 
-        let firstURL = root.appendingPathComponent("FixtureFamily00001-Regular.ttf")
-        try FileManager.default.removeItem(at: firstURL)
-        let replacement = MinimalFont.data(for: MinimalFontSpec(index: 0))
-        try replacement.write(to: firstURL)
+        let removedFile = root.appendingPathComponent("FixtureFamily00001-Regular.ttf")
+        try FileManager.default.removeItem(at: removedFile)
+        _ = try await scanner.scan(folder: root)
+        #expect(try database.counts().missing == 1)
 
-        let second = try await scanner.scan(folder: root)
-        #expect(second.changedFiles == 1)
-        #expect(second.removedFiles == 0)
-
-        try FileManager.default.removeItem(at: firstURL)
-        let third = try await scanner.scan(folder: root)
-        #expect(third.removedFiles == 1)
-
+        #expect(try database.deleteMissingFiles() == 1)
         let counts = try database.counts()
-        #expect(counts.files == 8)
-        #expect(counts.missing == 1)
+        #expect(counts.files == 3)
+        #expect(counts.missing == 0)
+        #expect(try database.problemFiles().isEmpty)
+        #expect(try database.faceIDs(inCollection: collectionID).count == 3)
+    }
 
-        let snapshot = try database.snapshot()
-        #expect(snapshot.faces.contains { $0.fileStatus == "missing" })
+    @Test("canonical paths resolve the ~ and trailing slash")
+    func resolvedPaths() {
+        let home = LibraryPath.resolve("~")
+        #expect(home == LibraryPath.canonical(NSHomeDirectory()))
+        let temp = FileManager.default.temporaryDirectory.path
+        #expect(LibraryPath.resolve(temp + "/") == LibraryPath.canonical(temp))
+        #expect(LibraryPath.relation(temp + "/a", temp) == .descendant)
+        #expect(LibraryPath.relation(temp, temp + "/a") == .ancestor)
+        #expect(LibraryPath.relation(temp, temp) == .same)
+        #expect(LibraryPath.relation(temp, "/") == .descendant)
+        #expect(LibraryPath.relation("/a/b", "/a/bc") == .unrelated)
+    }
+
+    @Test("nested roots: the deepest root owns each file")
+    func nestedRoots() async throws {
+        let root = try makeLibrary(count: 2)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let child = root.appendingPathComponent("Child", isDirectory: true)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        for index in 2..<4 {
+            let spec = MinimalFontSpec(index: index)
+            try MinimalFont.data(for: spec)
+                .write(to: child.appendingPathComponent("\(spec.postscriptName).ttf"))
+        }
+
+        let database = try LibraryDatabase(inMemory: true)
+        let scanner = LibraryScanner(database: database)
+
+        // Child first, then parent: the parent must not steal the child rows.
+        _ = try await scanner.scan(folder: child)
+        _ = try await scanner.scan(folder: root)
+        var folders = try database.folders()
+        let childFolder = try #require(folders.first { $0.path == LibraryPath.resolve(child.path) })
+        let rootFolder = try #require(folders.first { $0.path == LibraryPath.resolve(root.path) })
+        #expect(try database.existingFiles(folderID: childFolder.id).count == 2)
+        #expect(try database.existingFiles(folderID: rootFolder.id).count == 2)
+
+        // Rescanning the parent still leaves the child rows alone.
+        _ = try await scanner.scan(folder: root)
+        folders = try database.folders()
+        #expect(try database.existingFiles(folderID: childFolder.id).count == 2)
+        #expect(try database.existingFiles(folderID: rootFolder.id).count == 2)
+
+        // Adding the child after the parent adopts the rows from the parent.
+        let otherRoot = try makeLibrary(count: 2)
+        defer { try? FileManager.default.removeItem(at: otherRoot) }
+        let otherChild = otherRoot.appendingPathComponent("Child", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: otherChild,
+            withIntermediateDirectories: true
+        )
+        for index in 4..<6 {
+            let spec = MinimalFontSpec(index: index)
+            try MinimalFont.data(for: spec)
+                .write(to: otherChild.appendingPathComponent("\(spec.postscriptName).ttf"))
+        }
+        _ = try await scanner.scan(folder: otherRoot)
+        _ = try await scanner.scan(folder: otherChild)
+        folders = try database.folders()
+        let adoptedChild = try #require(
+            folders.first { $0.path == LibraryPath.resolve(otherChild.path) }
+        )
+        let adoptedRoot = try #require(
+            folders.first { $0.path == LibraryPath.resolve(otherRoot.path) }
+        )
+        #expect(try database.existingFiles(folderID: adoptedChild.id).count == 2)
+        #expect(try database.existingFiles(folderID: adoptedRoot.id).count == 2)
     }
 }

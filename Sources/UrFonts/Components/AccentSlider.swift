@@ -46,7 +46,11 @@ struct AccentSlider: NSViewRepresentable {
         }
 
         @objc func changed(_ sender: NSSlider) {
-            value.wrappedValue = sender.doubleValue
+            // Whole-point sizes only: the label already shows an integer, and
+            // fractional sizes produce inconsistent metrics between ticks.
+            let rounded = sender.doubleValue.rounded()
+            sender.doubleValue = rounded
+            value.wrappedValue = rounded
         }
     }
 }

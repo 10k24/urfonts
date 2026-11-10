@@ -12,11 +12,22 @@ struct FamilyDetailView: View {
     @State private var features: [OpenTypeFeature] = []
 
     private var faces: [CatalogFace] {
-        Array(model.snapshot.faces(in: family))
+        model.snapshot.faces(in: family).sorted { left, right in
+            let leftOK = left.fileStatus == "ok"
+            let rightOK = right.fileStatus == "ok"
+            if leftOK != rightOK {
+                return leftOK
+            }
+            let style = left.style.localizedStandardCompare(right.style)
+            if style != .orderedSame {
+                return style == .orderedAscending
+            }
+            return left.path.localizedStandardCompare(right.path) == .orderedAscending
+        }
     }
 
     private var previewFace: CatalogFace? {
-        faces.first { $0.isVariable && !$0.isItalic }
+        faces.first { $0.fileStatus == "ok" && $0.isVariable && !$0.isItalic }
             ?? model.representativeFace(for: family)
     }
 
@@ -52,6 +63,9 @@ struct FamilyDetailView: View {
         )
         .background(model.backgroundColor)
         .onAppear(perform: loadDefaultAxes)
+        .onChange(of: previewFace?.id) { _, _ in
+            loadDefaultAxes()
+        }
         .task(id: previewFace?.id) {
             loadFeatures()
         }
@@ -84,7 +98,7 @@ struct FamilyDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(family.name)
                     .font(.title2.weight(.semibold))
-                Text("\(family.faceCount) \(family.faceCount == 1 ? "style" : "styles")")
+                Text(family.countLabel)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -99,13 +113,20 @@ struct FamilyDetailView: View {
 
     private var detailPreview: some View {
         VStack(alignment: .leading, spacing: 8) {
-            DetailPreview(
-                face: previewFace,
-                axes: previewFace?.axes ?? [],
-                axisValues: axisValues,
-                text: model.sampleText(for: family),
-                textColor: model.textColor
-            )
+            ZStack {
+                DetailPreview(
+                    face: previewFace,
+                    axes: previewFace?.axes ?? [],
+                    axisValues: axisValues,
+                    text: model.sampleText(for: family),
+                    textColor: model.textColor
+                )
+                if previewFace == nil {
+                    Text("No readable file in this family")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
             .frame(height: 120)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -118,38 +139,99 @@ struct FamilyDetailView: View {
 
     private var styles: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Styles")
+            Text(hasDuplicatePostScriptName ? "Files" : "Styles")
                 .font(.headline)
+            if hasDuplicatePostScriptName {
+                Text("More than one file in this family reports the same PostScript "
+                    + "name. Only one can be active at a time; the others are disabled.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
             VStack(spacing: 0) {
                 ForEach(faces) { face in
-                    HStack(spacing: 14) {
-                        ActivationDot(
-                            state: model.faceActivation(face),
-                            action: { Task { await model.toggle(face: face) } }
-                        )
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(face.style)
-                            Text(face.postscriptName)
+                    let state = model.faceActivationState(face)
+                    let duplicatePostScript = face.fileStatus == "ok"
+                        && faces.contains { other in
+                            other.fileStatus == "ok"
+                                && other.id != face.id
+                                && other.postscriptName.caseInsensitiveCompare(
+                                    face.postscriptName
+                                ) == .orderedSame
+                        }
+                    let fileName = (face.path as NSString).lastPathComponent
+                    let isMissing = face.fileStatus != "ok"
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 14) {
+                            FaceActivationControl(
+                                state: state,
+                                action: { Task { await model.toggle(face: face) } }
+                            )
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 4) {
+                                    Text(face.style)
+                                    if duplicatePostScript {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.orange)
+                                            .help(
+                                                "Another file in this family uses the "
+                                                    + "same PostScript name"
+                                            )
+                                    }
+                                }
+                                Text(duplicatePostScript ? fileName : face.postscriptName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(width: 190, alignment: .leading)
+
+                            if isMissing {
+                                Text("File missing")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                StylePreview(
+                                    face: face,
+                                    text: model.sampleText(for: face),
+                                    textColor: model.textColor
+                                )
+                                .frame(height: 46)
+                            }
+
+                            Text("\(face.weightClass)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
+                                .monospacedDigit()
+                                .frame(width: 30, alignment: .trailing)
                         }
-                        .frame(width: 170, alignment: .leading)
 
-                        StylePreview(
-                            face: face,
-                            text: model.sampleText(for: face),
-                            textColor: model.textColor
-                        )
-                        .frame(height: 46)
+                        Text(face.path)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .help(face.path)
+                            .padding(.leading, 32)
 
-                        Text("\(face.weightClass)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .frame(width: 30, alignment: .trailing)
+                        if isMissing {
+                            Text("Missing file")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .padding(.leading, 32)
+                        }
+
+                        if let owner = blockedOwner(of: state) {
+                            Text("In use by \(owner)")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.leading, 32)
+                        }
                     }
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
@@ -160,6 +242,23 @@ struct FamilyDetailView: View {
             }
             .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
         }
+    }
+
+    private func blockedOwner(of state: FaceActivationState) -> String? {
+        if case .blocked(let owner) = state {
+            return owner
+        }
+        return nil
+    }
+
+    private var hasDuplicatePostScriptName: Bool {
+        var seen = Set<String>()
+        for face in faces where face.fileStatus == "ok" {
+            if !seen.insert(face.postscriptName.lowercased()).inserted {
+                return true
+            }
+        }
+        return false
     }
 
     private func axes(for face: CatalogFace) -> some View {

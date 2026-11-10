@@ -258,6 +258,68 @@ public final class LibraryDatabase: Sendable {
                 CREATE INDEX idx_collection_item_face ON collection_item(face_id);
                 """)
         }
+        migrator.registerMigration("v8") { db in
+            try db.execute(sql: """
+                ALTER TABLE folder ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0
+                """)
+            // System font folders lead by default. Everything else keeps path
+            // order until the user drags it.
+            let systemPaths = LibraryLocation.defaultFontFolders().map(\.path)
+            let rows = try Row.fetchAll(db, sql: "SELECT id, path FROM folder")
+            var idByPath: [String: String] = [:]
+            for row in rows {
+                idByPath[row["path"] as String] = row["id"] as String
+            }
+            var orderedIDs = systemPaths.compactMap { idByPath[$0] }
+            let otherIDs = rows
+                .map { $0["path"] as String }
+                .filter { !systemPaths.contains($0) }
+                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+                .compactMap { idByPath[$0] }
+            orderedIDs.append(contentsOf: otherIDs)
+            for (index, id) in orderedIDs.enumerated() {
+                try db.execute(
+                    sql: "UPDATE folder SET sort_order = ? WHERE id = ?",
+                    arguments: [index, id]
+                )
+            }
+            // System folders are watched from now on. Users can still switch
+            // them back to one-time scans from the context menu.
+            for path in systemPaths {
+                try db.execute(
+                    sql: "UPDATE folder SET kind = ? WHERE path = ?",
+                    arguments: [FolderKind.watched.rawValue, path]
+                )
+            }
+        }
+        migrator.registerMigration("v9") { db in
+            try db.execute(sql: "ALTER TABLE face ADD COLUMN preview_mask INTEGER")
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT id, coverage_ranges FROM face WHERE coverage_ranges IS NOT NULL"
+            )
+            for row in rows {
+                guard let data: Data = row["coverage_ranges"],
+                      let ranges = CoverageRanges(data: data) else {
+                    continue
+                }
+                let mask = FontScript.previewMask(for: ranges)
+                try db.execute(
+                    sql: "UPDATE face SET preview_mask = ? WHERE id = ?",
+                    arguments: [Int64(bitPattern: mask), row["id"] as String]
+                )
+            }
+        }
+        migrator.registerMigration("v10") { db in
+            // Paths the user chose not to index. A prefix excludes the whole
+            // subtree; rows are deleted but files are never touched.
+            try db.execute(sql: """
+                CREATE TABLE excluded_path (
+                    path TEXT PRIMARY KEY NOT NULL,
+                    added_at REAL NOT NULL
+                );
+                """)
+        }
         try migrator.migrate(queue)
     }
 
@@ -280,12 +342,24 @@ public final class LibraryDatabase: Sendable {
             let id = UUID().uuidString
             try db.execute(
                 sql: """
-                    INSERT INTO folder (id, path, kind, added_at, available)
-                    VALUES (?, ?, ?, ?, 1)
+                    INSERT INTO folder (id, path, kind, added_at, available, sort_order)
+                    VALUES (?, ?, ?, ?, 1,
+                        (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM folder))
                     """,
                 arguments: [id, path, kind.rawValue, Date().timeIntervalSince1970]
             )
             return id
+        }
+    }
+
+    public func setFolderOrder(_ ids: [String]) throws {
+        try queue.write { db in
+            for (index, id) in ids.enumerated() {
+                try db.execute(
+                    sql: "UPDATE folder SET sort_order = ? WHERE id = ?",
+                    arguments: [index, id]
+                )
+            }
         }
     }
 
@@ -328,9 +402,9 @@ public final class LibraryDatabase: Sendable {
             try db.execute(
                 sql: """
                     UPDATE file SET folder_id = ?
-                    WHERE folder_id = ? AND substr(path, 1, ?) = ?
+                    WHERE folder_id = ? AND substr(path, 1, length(?)) = ?
                     """,
-                arguments: [toFolderID, fromFolderID, pathPrefix.count, pathPrefix]
+                arguments: [toFolderID, fromFolderID, pathPrefix, pathPrefix]
             )
             return db.changesCount
         }
@@ -342,14 +416,66 @@ public final class LibraryDatabase: Sendable {
         }
     }
 
+    // MARK: - Excluded paths
+
+    /// Canonical paths the user has excluded from indexing. A path excludes its
+    /// whole subtree.
+    public func ignoredPaths() throws -> [String] {
+        try queue.read { db in
+            try String.fetchAll(db, sql: "SELECT path FROM excluded_path ORDER BY path")
+        }
+    }
+
+    public func ignorePath(_ path: String) throws {
+        try queue.write { db in
+            try db.execute(
+                sql: "INSERT OR IGNORE INTO excluded_path (path, added_at) VALUES (?, ?)",
+                arguments: [path, Date().timeIntervalSince1970]
+            )
+        }
+    }
+
+    public func unignorePath(_ path: String) throws {
+        try queue.write { db in
+            try db.execute(sql: "DELETE FROM excluded_path WHERE path = ?", arguments: [path])
+        }
+    }
+
+    /// Deletes the file rows under a path prefix. The font files stay on disk;
+    /// faces, activation rows and collection items cascade.
+    @discardableResult
+    public func deleteFiles(under path: String) throws -> Int {
+        let prefix = path.hasSuffix("/") ? path : path + "/"
+        return try queue.write { db in
+            try db.execute(
+                sql: "DELETE FROM file WHERE substr(path, 1, length(?)) = ?",
+                arguments: [prefix, prefix]
+            )
+            return db.changesCount
+        }
+    }
+
+    /// Deletes every file row that is not `ok`. Missing rows otherwise persist
+    /// by design so collection membership and warnings survive an offline
+    /// volume; this is the explicit cleanup.
+    @discardableResult
+    public func deleteMissingFiles() throws -> Int {
+        try queue.write { db in
+            try db.execute(sql: "DELETE FROM file WHERE status <> 'ok'")
+            return db.changesCount
+        }
+    }
+
     public func folders() throws -> [LibraryFolder] {
         try queue.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT folder.id, folder.path, folder.kind, folder.available,
-                       (SELECT COUNT(*) FROM file WHERE file.folder_id = folder.id) AS file_count,
+                       (SELECT COUNT(*) FROM file
+                        WHERE substr(file.path, 1, length(folder.path) + 1)
+                            = folder.path || '/') AS file_count,
                        folder.display_name
                 FROM folder
-                ORDER BY folder.path COLLATE NOCASE
+                ORDER BY folder.sort_order ASC, folder.path COLLATE NOCASE ASC
                 """)
             return rows.map { row in
                 LibraryFolder(
@@ -774,24 +900,17 @@ public final class LibraryDatabase: Sendable {
         try queue.write { db in
             for (faceID, coverage) in values {
                 try db.execute(
-                    sql: "UPDATE face SET script_mask = ?, coverage_ranges = ? WHERE id = ?",
+                    sql: """
+                        UPDATE face
+                        SET script_mask = ?, preview_mask = ?, coverage_ranges = ?
+                        WHERE id = ?
+                        """,
                     arguments: [
                         Int64(bitPattern: coverage.mask),
+                        Int64(bitPattern: coverage.previewMask),
                         coverage.ranges.data,
                         faceID,
                     ]
-                )
-            }
-        }
-    }
-
-    public func setScriptMasks(_ values: [String: UInt64]) throws {
-        guard !values.isEmpty else { return }
-        try queue.write { db in
-            for (faceID, mask) in values {
-                try db.execute(
-                    sql: "UPDATE face SET script_mask = ? WHERE id = ?",
-                    arguments: [Int64(bitPattern: mask), faceID]
                 )
             }
         }
@@ -837,10 +956,10 @@ public final class LibraryDatabase: Sendable {
         try queue.read { db in
             let duplicates = try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM (
-                    SELECT f.postscript_name
+                    SELECT lower(f.postscript_name)
                     FROM face f JOIN file ON file.id = f.file_id
                     WHERE f.postscript_name != '' AND file.status = 'ok'
-                    GROUP BY f.postscript_name
+                    GROUP BY lower(f.postscript_name)
                     HAVING COUNT(DISTINCT f.file_id) > 1
                 )
                 """) ?? 0
@@ -854,35 +973,41 @@ public final class LibraryDatabase: Sendable {
 
     public func duplicatePostScriptNames() throws -> [DuplicatePostScriptName] {
         try queue.read { db in
+            // Group case-insensitively to match the catalog's duplicate check.
+            // PostScript names are ASCII, so SQLite's lower() is enough.
             let rows = try Row.fetchAll(db, sql: """
                 SELECT f.postscript_name, file.path
                 FROM face f
                 JOIN file ON file.id = f.file_id
                 WHERE f.postscript_name != ''
                   AND file.status = 'ok'
-                  AND f.postscript_name IN (
-                      SELECT f2.postscript_name
+                  AND lower(f.postscript_name) IN (
+                      SELECT lower(f2.postscript_name)
                       FROM face f2 JOIN file file2 ON file2.id = f2.file_id
                       WHERE file2.status = 'ok'
-                      GROUP BY f2.postscript_name
+                        AND f2.postscript_name != ''
+                      GROUP BY lower(f2.postscript_name)
                       HAVING COUNT(DISTINCT f2.file_id) > 1
                   )
-                GROUP BY f.postscript_name, file.path
-                ORDER BY f.postscript_name COLLATE NOCASE, file.path
+                GROUP BY lower(f.postscript_name), file.path
+                ORDER BY lower(f.postscript_name), file.path
                 """)
             var order: [String] = []
+            var names: [String: String] = [:]
             var paths: [String: [String]] = [:]
             for row in rows {
                 let name: String = row[0]
                 let path: String = row[1]
-                if paths[name] == nil {
-                    order.append(name)
-                    paths[name] = []
+                let key = name.lowercased()
+                if paths[key] == nil {
+                    order.append(key)
+                    names[key] = name
+                    paths[key] = []
                 }
-                paths[name]?.append(path)
+                paths[key]?.append(path)
             }
             return order.map {
-                DuplicatePostScriptName(name: $0, paths: paths[$0] ?? [])
+                DuplicatePostScriptName(name: names[$0] ?? $0, paths: paths[$0] ?? [])
             }
         }
     }
@@ -926,7 +1051,7 @@ public final class LibraryDatabase: Sendable {
                        f.width_class, f.is_italic, f.is_variable, f.axes_json,
                        f.units_per_em, f.x_height, f.cap_height, f.ascender,
                        f.descender, f.vendor_id, f.embedding,
-                       file.path, file.status, f.script_mask
+                       file.path, file.status, f.script_mask, f.preview_mask
                 FROM face f
                 JOIN file ON file.id = f.file_id
                 """)
@@ -937,11 +1062,13 @@ public final class LibraryDatabase: Sendable {
             var familyKeys: [String: String] = [:]
             familyKeys.reserveCapacity(rows.count / 4 + 1)
             for row in rows {
-                // Positional reads: tens of thousands of rows times 21 columns
+                // Positional reads: tens of thousands of rows times 22 columns
                 // is worth it.
                 let path: String = row[19]
                 let scriptMaskValue: Int64? = row[21]
                 let scriptMask = UInt64(max(0, scriptMaskValue ?? 0))
+                let previewMaskValue: Int64? = row[22]
+                let previewMask = UInt64(max(0, previewMaskValue ?? 0))
                 var family: String = row[4]
                 var style: String = row[5]
                 if fallbackFileNames {
@@ -998,7 +1125,8 @@ public final class LibraryDatabase: Sendable {
                     descender: row[16],
                     vendorID: row[17],
                     embedding: row[18],
-                    scriptMask: scriptMask
+                    scriptMask: scriptMask,
+                    previewMask: previewMask
                 ))
             }
             return CatalogSnapshot.build(faces: faces)

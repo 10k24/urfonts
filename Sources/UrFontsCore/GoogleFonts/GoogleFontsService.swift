@@ -242,16 +242,6 @@ public actor GoogleFontsService {
             guard seen.insert(family.family).inserted else { continue }
             let directory = normalize(family.family)
             var files = filesByDirectory[directory] ?? []
-            if files.isEmpty {
-                // Some directories differ from the family name by punctuation
-                // only; try a looser key.
-                let loose = looseNormalize(family.family)
-                if let match = filesByDirectory.first(where: {
-                    looseNormalize($0.key) == loose
-                }) {
-                    files = match.value
-                }
-            }
             if files.contains(where: { !$0.path.contains("/static/") }) {
                 files.removeAll { $0.path.contains("/static/") }
             }
@@ -274,13 +264,6 @@ public actor GoogleFontsService {
     }
 
     private static func normalize(_ name: String) -> String {
-        name.lowercased().unicodeScalars
-            .filter { CharacterSet.alphanumerics.contains($0) }
-            .map(String.init)
-            .joined()
-    }
-
-    private static func looseNormalize(_ name: String) -> String {
         name.lowercased().unicodeScalars
             .filter { CharacterSet.alphanumerics.contains($0) }
             .map(String.init)

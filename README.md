@@ -56,39 +56,48 @@ expensive part.
 
 ## What works today
 
-- Index static or watched folders. Files are read-only, never renamed or moved.
+- Index static or watched folders. New installs seed the standard macOS font
+  folders as watched. Files are read-only, never renamed or moved.
 - Add individual font files or drop files and folders on the browser.
 - Browse a family-first list or grid over tens of thousands of fonts, with a
   nested folder tree that mirrors indexed directories.
 - Active sidebar item for fonts currently registered through Ur Fonts, with the
   same list, preview and activation controls.
 - Warnings page for duplicate PostScript names and missing files, grouped by
-  type with expandable disclosure sections and reveal/copy-path actions.
+  type with expandable disclosure sections and reveal/copy-path actions. Remove
+  Missing Entries deletes the stale rows, never the files.
 - Preview in the font itself, with editable text, presets, a size slider in the
   status bar, and text/background colors. Script-aware samples for CJK, Arabic,
   Hebrew and others once the coverage index is built from the filter popover.
+  Unsupported characters show the font's `.notdef`; previews never substitute
+  another font.
 - Activate and deactivate families globally through CoreText, with a journal and
   launch reconciliation. Fonts inside system Fonts folders are left alone.
 - Watch folders with FSEvents plus a five-minute sweep; only changed paths are
   re-read.
-- Font sheet: every style rendered in the sample text, per-style activation,
-  variable-font axis sliders, OpenType feature list, sectioned glyph map with
-  character, code point and SVG copy, file info.
-- Folder labels, watched/static folders, reveal in Finder, safe removal.
-- Collections with create/rename/delete and add/remove from a family.
+- Font sheet: every style rendered in the sample text, per-style activation and
+  absolute file paths, variable-font axis sliders, OpenType feature list,
+  sectioned glyph map with character, code point and SVG copy, file info.
+  Duplicate file versions appear individually; when one PostScript name is
+  active, the others are disabled and name the active path.
+- Folder labels, watched/static folders, Ignore This Folder for any subtree
+  (also managed in Settings → Ignored Folders, with FontBase cache detection),
+  font rows disappear, files stay, reveal in Finder, safe removal.
+- Collections with create/rename/delete, add/remove from a family, and
+  Activate All / Deactivate All from the collection menu.
 - Named preview samples (⌘E) with text, size and colors.
 - System fonts visible by default, hideable from Filters; Apple's leading `.`
   is stripped for display.
 - Non-Latin family names keep the local name and add a Latin label in
   parentheses, and sort under that label.
-- Export/Import Settings as versioned JSON: folders, collections, samples and
-  preview settings, ready for a dotfiles repo.
-- Google Fonts browser: search the catalog, download TTF families with licenses,
-  and use them like any other library font.
+- Export/Import Settings as versioned JSON: folders, collections, samples,
+  preview settings and ignored folder paths, ready for a dotfiles repo.
+- Google Fonts lives under Hosts in the sidebar: search the catalog, download
+  TTF families with licenses, and use them like any other library font.
 - Headless test modes that never take focus.
 
-Not there yet: tags, Quick Look, document preflight, font-cache repair for
-re-exported fonts, full GlyphsApp language parity, notarized release.
+Not there yet: favorites, tags, Quick Look, document preflight, font-cache repair
+for re-exported fonts, full GlyphsApp language parity, notarized release.
 
 ## Requirements
 

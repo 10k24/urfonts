@@ -18,6 +18,7 @@ enum SidebarSelection: Hashable {
     case subfolder(String)
     case collection(String)
     case problems
+    case googleFonts
 }
 
 enum FamilyActivation: Equatable {
@@ -25,6 +26,41 @@ enum FamilyActivation: Equatable {
     case partial
     case all
     case installed
+    case missing
+    case blocked(ownerPath: String)
+
+    var canToggle: Bool {
+        switch self {
+        case .installed, .missing, .blocked:
+            return false
+        case .none, .partial, .all:
+            return true
+        }
+    }
+}
+
+/// Per-file state shown in the font sheet. A duplicate PostScript name is
+/// blocked, not merely rejected after the click.
+enum FaceActivationState: Equatable {
+    case available
+    case active
+    case installed
+    case missing
+    case blocked(ownerPath: String)
+}
+
+struct FolderAddEntry: Identifiable, Sendable {
+    let id = UUID()
+    let url: URL
+    let kind: FolderKind
+}
+
+/// A user add that overlaps the library or ignored list. The warning is shown
+/// once, then the add proceeds if the user confirms.
+struct PendingFolderAdd: Identifiable {
+    let id = UUID()
+    let entries: [FolderAddEntry]
+    let warnings: [String]
 }
 
 @MainActor
@@ -60,6 +96,11 @@ final class AppModel {
     var collectionFontCounts: [String: Int] = [:]
     var folderFontCounts: [String: Int] = [:]
     var folderTreeRoots: [FolderNode] = []
+    /// Canonical directories excluded from indexing. The sidebar keeps a row so
+    /// the exclusion stays reversible.
+    var ignoredPaths: [String] = [] {
+        didSet { rebuildFolderTrees() }
+    }
     var viewMode: BrowserViewMode = .list
 
     var showSystemFonts: Bool =
@@ -83,7 +124,9 @@ final class AppModel {
     var isLoading = true
     var status = ""
     var errorMessage: String?
+    var pendingFolderAdd: PendingFolderAdd?
     var activeFaceIDs: Set<String> = []
+    var activePostScriptOwners: [String: String] = [:]
     var duplicateCount = 0
     var missingFileCount = 0
     var duplicates: [DuplicatePostScriptName] = []
@@ -184,9 +227,8 @@ final class AppModel {
                 return count + 1
             }
         case .path(let path):
-            let prefix = path.hasSuffix("/") ? path : path + "/"
             return snapshot.faces.reduce(0) { count, face in
-                guard face.path.hasPrefix(prefix) else { return count }
+                guard LibraryPath.isInside(face.path, root: path) else { return count }
                 if let familyIDs, !familyIDs.contains(face.familyKey) {
                     return count
                 }
@@ -218,7 +260,9 @@ final class AppModel {
             switch argument {
             case "--folder":
                 if let value = arguments.next() {
-                    folders.append(URL(fileURLWithPath: value))
+                    folders.append(
+                        URL(fileURLWithPath: LibraryPath.resolve(value))
+                    )
                 }
             case "--db":
                 databasePath = arguments.next()
@@ -227,8 +271,9 @@ final class AppModel {
             }
         }
         initialFolders = folders
-        databaseURL = databasePath.map { URL(fileURLWithPath: $0) }
-            ?? (try? LibraryLocation.defaultDatabaseURL())
+        databaseURL = databasePath.map {
+            URL(fileURLWithPath: LibraryPath.resolve($0))
+        } ?? (try? LibraryLocation.defaultDatabaseURL())
     }
 
     // MARK: - Lifecycle
@@ -245,6 +290,17 @@ final class AppModel {
             self.database = database
             activationEngine = ActivationEngine(database: database)
             coverageIndexer = CoverageIndexer(database: database)
+
+            var seededDefaults = false
+            if initialFolders.isEmpty,
+               !CommandLine.arguments.contains("--headless"),
+               try database.folders().isEmpty {
+                for url in LibraryLocation.defaultFontFolders() {
+                    await addFolder(url, kind: .watched)
+                }
+                seededDefaults = true
+            }
+
             await reload()
             refreshActive()
             refreshCoverage()
@@ -261,7 +317,9 @@ final class AppModel {
                 for folder in initialFolders {
                     await addFolder(folder)
                 }
-            } else if !folders.isEmpty, !CommandLine.arguments.contains("--no-rescan") {
+            } else if !seededDefaults,
+                      !folders.isEmpty,
+                      !CommandLine.arguments.contains("--no-rescan") {
                 Task { await rescanAll() }
             }
         } catch {
@@ -278,9 +336,14 @@ final class AppModel {
                 try database.snapshot(fallbackFileNames: fallback)
             }.value
             self.snapshot = snapshot
+            let ignored = (try? database.ignoredPaths()) ?? []
+            if ignoredPaths != ignored {
+                ignoredPaths = ignored
+            }
             folderFamilyIDs.removeAll(keepingCapacity: true)
             coverageRangesByFace = nil
             collectionMembershipCache = nil
+            collectionFaceIDsCache.removeAll()
             catalogRevision &+= 1
             visibleCache = nil
             rebuildVisible()
@@ -289,6 +352,10 @@ final class AppModel {
             rebuildCollectionCounts()
             refreshCoverage()
             refreshProblemCounts()
+            folders = (try? database.folders()) ?? folders
+            if selection == .problems {
+                await loadProblems()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -379,12 +446,10 @@ final class AppModel {
             return
         }
         var fontsByFolder: [String: Int] = [:]
-        let prefixes = folders.map { folder in
-            (folder.id, folder.path.hasSuffix("/") ? folder.path : folder.path + "/")
-        }
         for face in snapshot.faces {
-            for (id, prefix) in prefixes where face.path.hasPrefix(prefix) {
-                fontsByFolder[id, default: 0] += 1
+            for folder in folders
+            where LibraryPath.isInside(face.path, root: folder.path) {
+                fontsByFolder[folder.id, default: 0] += 1
             }
         }
         folderFontCounts = fontsByFolder
@@ -396,6 +461,7 @@ final class AppModel {
             let path: String
             var children: [String: Builder] = [:]
             var fonts = 0
+            var ignored = false
 
             init(name: String, path: String) {
                 self.name = name
@@ -419,8 +485,25 @@ final class AppModel {
                 fontCount: builder.fonts,
                 children: children.isEmpty ? nil : children,
                 folderID: folderID,
-                isWatched: watched
+                isWatched: watched,
+                isIgnored: builder.ignored
             )
+        }
+
+        /// Walks an ignored path, creating the intermediate rows so the
+        /// exclusion stays visible and can be undone.
+        func markIgnored(_ ignoredPath: String, from root: Builder) {
+            var node = root
+            var path = root.path.hasSuffix("/") ? root.path : root.path + "/"
+            guard ignoredPath.hasPrefix(path) else { return }
+            for component in ignoredPath.dropFirst(path.count).split(separator: "/") {
+                path += String(component) + "/"
+                let key = String(component)
+                let child = node.children[key] ?? Builder(name: key, path: path)
+                node.children[key] = child
+                node = child
+            }
+            node.ignored = true
         }
 
         var roots: [FolderNode] = []
@@ -446,6 +529,18 @@ final class AppModel {
                     node.children[key] = child
                     child.fonts += 1
                     node = child
+                }
+            }
+            if ignoredPaths.contains(where: {
+                folder.path == $0 || folder.path.hasPrefix($0 + "/")
+            }) {
+                root.ignored = true
+            }
+            for ignoredPath in ignoredPaths {
+                if ignoredPath == folder.path {
+                    root.ignored = true
+                } else {
+                    markIgnored(ignoredPath, from: root)
                 }
             }
             roots.append(convert(
@@ -525,15 +620,54 @@ final class AppModel {
             } else {
                 try database.addFaces(faceIDs, toCollection: collectionID)
             }
-            collectionMembershipCache = nil
-            collectionFaceIDsCache.removeValue(forKey: collectionID)
-            collections = (try? database.collections()) ?? collections
-            rebuildCollectionCounts()
-            visibleCache = nil
-            rebuildVisible()
+            refreshCollection(collectionID)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Activates or deactivates every face stored in a collection. Installed
+    /// faces are skipped by the engine.
+    func setCollectionActive(_ collection: FontCollection, active: Bool) async {
+        guard let activationEngine else { return }
+        let ids = collectionFaceIDs(collection.id)
+        let candidates = snapshot.faces.filter { face in
+            guard ids.contains(face.id) else { return false }
+            return active ? face.fileStatus == "ok" : true
+        }
+        let faces = active
+            ? candidates
+            : candidates.filter { activeFaceIDs.contains($0.id) }
+        guard !faces.isEmpty else {
+            status = active
+                ? "No fonts in \(collection.name)"
+                : "No active fonts in \(collection.name)"
+            return
+        }
+        let targets = faces.map {
+            ActivationTarget(
+                faceID: $0.id,
+                path: $0.path,
+                postscriptName: $0.postscriptName
+            )
+        }
+        status = "\(active ? "Activating" : "Deactivating") \(collection.name)…"
+        let outcome = active
+            ? await activationEngine.activate(targets, scope: .user, source: "manual")
+            : await activationEngine.deactivate(targets)
+        refreshActive()
+        status = outcome.summary.isEmpty ? "No change" : outcome.summary
+    }
+
+    private func refreshCollection(_ collectionID: String) {
+        collectionMembershipCache = nil
+        collectionFaceIDsCache.removeValue(forKey: collectionID)
+        if let database {
+            collections = (try? database.collections()) ?? collections
+        }
+        rebuildCollectionCounts()
+        visibleCache = nil
+        rebuildVisible()
     }
 
     // MARK: - Google Fonts
@@ -669,7 +803,8 @@ final class AppModel {
             folders: folderConfigs,
             collections: collectionConfigs,
             samples: sampleConfigs,
-            preview: preview
+            preview: preview,
+            ignoredPaths: ignoredPaths
         )
     }
 
@@ -701,14 +836,34 @@ final class AppModel {
             let kind = FolderKind(rawValue: folder.kind) ?? .staticFolder
             await addFolder(URL(fileURLWithPath: folder.path), kind: kind)
             if let label = folder.label, !label.isEmpty {
-                let canonical = URL(fileURLWithPath: folder.path)
-                    .resolvingSymlinksInPath().path
+                let canonical = LibraryPath.resolve(folder.path)
                 if let stored = folders.first(where: { $0.path == canonical }) {
                     try? database.setDisplayName(folderID: stored.id, name: label)
                 }
             }
         }
         folders = (try? database.folders()) ?? folders
+        await reload()
+
+        var orderedFolderIDs: [String] = []
+        for item in config.folders {
+            let path = LibraryPath.resolve(item.path)
+            if let folder = folders.first(where: { $0.path == path }) {
+                orderedFolderIDs.append(folder.id)
+            }
+        }
+        for folder in folders where !orderedFolderIDs.contains(folder.id) {
+            orderedFolderIDs.append(folder.id)
+        }
+        try database.setFolderOrder(orderedFolderIDs)
+        folders = (try? database.folders()) ?? folders
+
+        for path in config.ignoredPaths ?? [] {
+            let canonical = LibraryPath.resolve(path)
+            try database.ignorePath(canonical)
+            try database.deleteFiles(under: canonical)
+        }
+        ignoredPaths = (try? database.ignoredPaths()) ?? ignoredPaths
         await reload()
 
         for item in config.collections {
@@ -815,19 +970,49 @@ final class AppModel {
     }
 
     func sampleText(for face: CatalogFace) -> String {
-        FontScript.previewText(mask: face.scriptMask, userText: sampleText)
+        FontScript.previewText(mask: face.previewMask, userText: sampleText)
     }
 
     /// Long presets need a third line. Row height stays uniform across the list;
     /// only a sample change alters it.
-    var previewRowHeight: CGFloat {
-        if sampleText.count > 48 { return 224 }
-        if sampleText.count > 28 { return 176 }
-        return 128
+    /// Lines a preset is allowed to use. Independent of the row height: a
+    /// large short sample must not silently become a four-line row.
+    var previewLineBudget: Int {
+        sampleText.count > 48 ? 4 : 2
     }
 
-    var previewMaxLines: Int {
-        previewRowHeight > 200 ? 4 : 2
+    var previewMaxLines: Int { previewLineBudget }
+
+    /// Uniform row height for the current sample and available preview width.
+    ///
+    /// The line count is estimated from the width and the sample size, so a
+    /// single-line preview does not carry a second line's padding when the
+    /// slider grows. Multi-line previews keep their breathing room. Quantized to
+    /// 8 pt so dragging the slider does not relayout on every tick.
+    func previewRowHeight(previewWidth: CGFloat) -> CGFloat {
+        let base: CGFloat
+        if sampleText.count > 48 {
+            base = 224
+        } else if sampleText.count > 28 {
+            base = 176
+        } else {
+            base = 128
+        }
+
+        let size = max(1, CGFloat(sampleSize))
+        // Average advance is about 0.65 em for the mixed-case samples. Wider
+        // display faces wrap earlier; that is a safe overestimate for padding.
+        let charactersPerLine = max(1, Int(previewWidth / (size * 0.65)))
+        let estimatedLines = min(
+            previewLineBudget,
+            max(1, Int(ceil(Double(sampleText.count) / Double(charactersPerLine))))
+        )
+        let lineHeight = size * 1.3
+        let padding: CGFloat = estimatedLines > 1 ? 12 : 8
+        let needed = CGFloat(estimatedLines) * lineHeight + padding
+        let step: CGFloat = 8
+        let quantized = (needed / step).rounded(.up) * step
+        return max(base, quantized)
     }
 
     // MARK: - Activation
@@ -835,8 +1020,15 @@ final class AppModel {
     func refreshActive() {
         guard let database else { return }
         let updated = (try? database.activeFaceIDs()) ?? []
-        guard updated != activeFaceIDs else { return }
+        let records = (try? database.activationRecords()) ?? []
+        var owners: [String: String] = [:]
+        owners.reserveCapacity(records.count)
+        for record in records {
+            owners[record.postscriptName.lowercased()] = record.path
+        }
+        guard updated != activeFaceIDs || owners != activePostScriptOwners else { return }
         activeFaceIDs = updated
+        activePostScriptOwners = owners
         visibleCache = nil
         if selection == .active {
             rebuildVisible()
@@ -851,38 +1043,93 @@ final class AppModel {
 
     func familyActivation(_ family: CatalogFamily) -> FamilyActivation {
         let faces = snapshot.faces(in: family)
-        if faces.contains(where: { ActivationEngine.isInstalledPath($0.path) }) {
-            return .installed
+        let present = faces.filter { $0.fileStatus == "ok" }
+        guard !present.isEmpty else { return .missing }
+        let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
+        guard !activatable.isEmpty else { return .installed }
+
+        if family.hasDuplicatePostScriptNames {
+            guard let preferred = representativeFace(for: family) else {
+                return .missing
+            }
+            switch faceActivationState(preferred) {
+            case .active:
+                return .all
+            case .installed:
+                return .installed
+            case .missing:
+                return .missing
+            case .blocked(let owner):
+                return .blocked(ownerPath: owner)
+            case .available:
+                return .none
+            }
         }
-        let active = faces.reduce(0) { count, face in
+
+        let active = activatable.reduce(0) { count, face in
             count + (activeFaceIDs.contains(face.id) ? 1 : 0)
         }
-        if active == 0 { return .none }
-        return active == family.faceCount ? .all : .partial
+        if active == 0 {
+            let available = activatable.filter {
+                faceActivationState($0) == .available
+            }
+            if available.isEmpty,
+               let owner = activatable.compactMap({ face -> String? in
+                   if case .blocked(let owner) = faceActivationState(face) {
+                       return owner
+                   }
+                   return nil
+               }).first {
+                return .blocked(ownerPath: owner)
+            }
+            return .none
+        }
+        return active == activatable.count ? .all : .partial
     }
 
-    func faceActivation(_ face: CatalogFace) -> FamilyActivation {
+    func faceActivationState(_ face: CatalogFace) -> FaceActivationState {
+        guard face.fileStatus == "ok" else { return .missing }
         if ActivationEngine.isInstalledPath(face.path) {
             return .installed
         }
-        return activeFaceIDs.contains(face.id) ? .all : .none
+        if activeFaceIDs.contains(face.id) {
+            return .active
+        }
+        if let owner = activePostScriptOwners[face.postscriptName.lowercased()],
+           owner != face.path {
+            return .blocked(ownerPath: owner)
+        }
+        return .available
     }
 
     func toggle(face: CatalogFace) async {
         guard let activationEngine else { return }
+        let state = faceActivationState(face)
+        switch state {
+        case .installed:
+            return
+        case .missing:
+            status = "\((face.path as NSString).lastPathComponent) is missing"
+            return
+        case .blocked(let owner):
+            status = "PostScript name is in use by \(owner)"
+            return
+        case .available, .active:
+            break
+        }
+
         let target = ActivationTarget(
             faceID: face.id,
             path: face.path,
             postscriptName: face.postscriptName
         )
-        let state = faceActivation(face)
-        guard state != .installed else { return }
-        status = state == .all
-            ? "Deactivating \(face.style)…"
-            : "Activating \(face.style)…"
-        let outcome = state == .all
-            ? await activationEngine.deactivate([target])
-            : await activationEngine.activate([target], scope: .user, source: "manual")
+        let activating = state == .available
+        status = activating
+            ? "Activating \(face.style)…"
+            : "Deactivating \(face.style)…"
+        let outcome = activating
+            ? await activationEngine.activate([target], scope: .user, source: "manual")
+            : await activationEngine.deactivate([target])
         refreshActive()
         status = outcome.summary.isEmpty ? "No change" : outcome.summary
     }
@@ -894,18 +1141,51 @@ final class AppModel {
     func toggle(_ family: CatalogFamily) async {
         guard let activationEngine else { return }
         let faces = Array(snapshot.faces(in: family))
-        guard !faces.isEmpty else { return }
-        let state = familyActivation(family)
-        guard state != .installed else { return }
+        let present = faces.filter { $0.fileStatus == "ok" }
+        guard !present.isEmpty else {
+            status = "No readable files in \(family.name)"
+            return
+        }
+        let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
 
-        let targets = faces.map {
+        // Duplicate PostScript groups have no single family-level meaning.
+        // Toggle the one file in context.
+        if family.hasDuplicatePostScriptNames {
+            guard let preferred = representativeFace(for: family) else {
+                status = "No readable file in \(family.name)"
+                return
+            }
+            await toggle(face: preferred)
+            return
+        }
+
+        guard !activatable.isEmpty else {
+            status = "\(family.name) is installed"
+            return
+        }
+        let state = familyActivation(family)
+        let targetsFaces: [CatalogFace]
+        switch state {
+        case .all:
+            targetsFaces = activatable.filter { activeFaceIDs.contains($0.id) }
+        case .none, .partial:
+            targetsFaces = activatable.filter {
+                faceActivationState($0) == .available
+            }
+        case .installed, .missing, .blocked:
+            return
+        }
+        guard !targetsFaces.isEmpty else {
+            status = "No activatable files in \(family.name)"
+            return
+        }
+        let targets = targetsFaces.map {
             ActivationTarget(
                 faceID: $0.id,
                 path: $0.path,
                 postscriptName: $0.postscriptName
             )
         }
-
         status = state == .all
             ? "Deactivating \(family.name)…"
             : "Activating \(family.name)…"
@@ -916,19 +1196,114 @@ final class AppModel {
         status = outcome.summary.isEmpty ? "No change" : outcome.summary
     }
 
+    /// Adds or rescans a folder. Overlap warnings live in
+    /// `requestAddFolders`; this is the low-level path used by scans, seeding,
+    /// settings import and confirmed adds.
     func addFolder(_ url: URL, kind: FolderKind = .staticFolder) async {
         guard let database else { return }
-        status = "Scanning \(url.lastPathComponent)…"
+        let resolved = URL(fileURLWithPath: LibraryPath.resolve(url.path))
+        status = "Scanning \(resolved.lastPathComponent)…"
         do {
             let report = try await LibraryScanner(database: database)
-                .scan(folder: url, kind: kind)
+                .scan(folder: resolved, kind: kind)
             status = report.summary
             await reload()
             folders = try database.folders()
             setupWatching()
+            await reconcileActivation()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: - User folder adds
+
+    func requestAddFolder(_ url: URL, kind: FolderKind) {
+        requestAddFolders([FolderAddEntry(url: url, kind: kind)])
+    }
+
+    func requestAddFolders(_ entries: [FolderAddEntry]) {
+        var seen = Set<String>()
+        let resolved = entries.compactMap { entry -> FolderAddEntry? in
+            let path = LibraryPath.resolve(entry.url.path)
+            guard !path.isEmpty, seen.insert(path).inserted else { return nil }
+            return FolderAddEntry(
+                url: URL(fileURLWithPath: path),
+                kind: entry.kind
+            )
+        }
+        guard !resolved.isEmpty else { return }
+        var seenWarnings = Set<String>()
+        let warnings = resolved
+            .flatMap { folderAddWarnings(for: $0.url.path) }
+            .filter { seenWarnings.insert($0).inserted }
+        if warnings.isEmpty {
+            Task { await addFolders(resolved) }
+        } else {
+            pendingFolderAdd = PendingFolderAdd(entries: resolved, warnings: warnings)
+        }
+    }
+
+    func confirmPendingFolderAdd() async {
+        guard let pending = pendingFolderAdd else { return }
+        pendingFolderAdd = nil
+        await addFolders(pending.entries)
+    }
+
+    func cancelPendingFolderAdd() {
+        pendingFolderAdd = nil
+    }
+
+    private func addFolders(_ entries: [FolderAddEntry]) async {
+        for entry in entries {
+            await addFolder(entry.url, kind: entry.kind)
+        }
+    }
+
+    /// Warnings shown before an add proceeds. Paths are already canonical.
+    func folderAddWarnings(for path: String) -> [String] {
+        let candidate = LibraryPath.resolve(path)
+        var warnings: [String] = []
+        var seen = Set<String>()
+
+        func append(_ warning: String) {
+            if seen.insert(warning).inserted {
+                warnings.append(warning)
+            }
+        }
+
+        for ignored in ignoredPaths {
+            switch LibraryPath.relation(candidate, ignored) {
+            case .same:
+                append("This folder is already ignored.")
+            case .descendant:
+                append("This folder is inside ignored folder \(ignored). "
+                    + "Its fonts will not be indexed.")
+            case .ancestor:
+                append("This folder contains ignored folder \(ignored). "
+                    + "That subtree stays excluded.")
+            case .unrelated:
+                break
+            }
+        }
+
+        for folder in folders {
+            switch LibraryPath.relation(candidate, folder.path) {
+            case .same:
+                append("This folder is already in the library.")
+            case .descendant:
+                append("This folder is already inside library folder \(folder.displayPath).")
+            case .ancestor:
+                append("This folder contains library folder \(folder.displayPath).")
+            case .unrelated:
+                break
+            }
+        }
+        return warnings
+    }
+
+    func isPathIgnored(_ path: String) -> Bool {
+        isIgnored(LibraryPath.resolve(path))
     }
 
     /// Adds individual font files. Files already inside an indexed folder join
@@ -944,10 +1319,19 @@ final class AppModel {
             errorMessage = "No font files were selected."
             return
         }
+        if let blocked = files.first(where: {
+            isPathIgnored($0.deletingLastPathComponent().path)
+        }) {
+            errorMessage = "\(blocked.deletingLastPathComponent().lastPathComponent) is ignored. "
+                + "Stop ignoring it in the settings first."
+            return
+        }
 
         var grouped: [String: [URL]] = [:]
         for file in files {
-            let directory = file.deletingLastPathComponent().standardizedFileURL.path
+            let directory = LibraryPath.resolve(
+                file.deletingLastPathComponent().path
+            )
             grouped[directory, default: []].append(file)
         }
 
@@ -957,7 +1341,7 @@ final class AppModel {
             var addedFaces = 0
             for (directory, directoryFiles) in grouped {
                 let covering = folders
-                    .filter { directory == $0.path || directory.hasPrefix($0.path + "/") }
+                    .filter { LibraryPath.isInside(directory, root: $0.path) }
                     .max { $0.path.count < $1.path.count }
                 let folderURL = URL(fileURLWithPath: covering?.path ?? directory)
                 let report = try await scanner.scan(
@@ -990,8 +1374,12 @@ final class AppModel {
                 files.append(url)
             }
         }
-        for directory in directories {
-            await addFolder(directory)
+        if !directories.isEmpty {
+            requestAddFolders(
+                directories.map {
+                    FolderAddEntry(url: $0, kind: .staticFolder)
+                }
+            )
         }
         if !files.isEmpty {
             await addFontFiles(files)
@@ -1013,6 +1401,32 @@ final class AppModel {
         revealPath(folder.path)
     }
 
+    /// Moves a sidebar root before another root. Managed folders stay hidden at
+    /// the end of the stored order.
+    func moveFolder(id sourceID: String, by offset: Int) {
+        guard offset != 0 else { return }
+        var ordered = displayFolders
+        guard let from = ordered.firstIndex(where: { $0.id == sourceID }) else { return }
+        let destination = from + offset
+        guard ordered.indices.contains(destination) else { return }
+        let item = ordered.remove(at: from)
+        ordered.insert(item, at: destination)
+        persistFolderOrder(ordered, moved: item)
+    }
+
+    private func persistFolderOrder(_ ordered: [LibraryFolder], moved: LibraryFolder) {
+        guard let database else { return }
+        var ids = ordered.map(\.id)
+        ids.append(contentsOf: folders.filter { $0.kind == .managed }.map(\.id))
+        do {
+            try database.setFolderOrder(ids)
+            folders = try database.folders()
+            status = "Moved \(moved.name)"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func revealPath(_ path: String) {
         let url = URL(fileURLWithPath: path)
         // A missing file cannot be selected in Finder; show its folder instead.
@@ -1023,9 +1437,9 @@ final class AppModel {
     }
 
     func activeFaceCount(in folder: LibraryFolder) -> Int {
-        let prefix = folder.path.hasSuffix("/") ? folder.path : folder.path + "/"
-        return snapshot.faces.reduce(0) { count, face in
-            count + (activeFaceIDs.contains(face.id) && face.path.hasPrefix(prefix) ? 1 : 0)
+        snapshot.faces.reduce(0) { count, face in
+            count + (activeFaceIDs.contains(face.id)
+                && LibraryPath.isInside(face.path, root: folder.path) ? 1 : 0)
         }
     }
 
@@ -1051,9 +1465,11 @@ final class AppModel {
         guard let database else { return }
         // Deactivate first: removing rows would otherwise leave fonts active
         // with no journal entry to turn them off later.
-        let prefix = folder.path.hasSuffix("/") ? folder.path : folder.path + "/"
         let activeTargets = snapshot.faces
-            .filter { $0.path.hasPrefix(prefix) && activeFaceIDs.contains($0.id) }
+            .filter {
+                LibraryPath.isInside($0.path, root: folder.path)
+                    && activeFaceIDs.contains($0.id)
+            }
             .map {
                 ActivationTarget(
                     faceID: $0.id,
@@ -1062,19 +1478,40 @@ final class AppModel {
                 )
             }
         if !activeTargets.isEmpty, let activationEngine {
-            _ = await activationEngine.deactivate(activeTargets)
+            let outcome = await activationEngine.deactivate(activeTargets)
             refreshActive()
+            if !outcome.failures.isEmpty {
+                errorMessage = outcome.summary
+                return
+            }
         }
 
         do {
+            let pathPrefix = folder.path.hasSuffix("/") ? folder.path : folder.path + "/"
             try await Task.detached {
+                // Nested roots: hand this root's files back to the deepest
+                // remaining ancestor before deleting the folder row.
+                let remaining = try database.folders().filter { $0.id != folder.id }
+                let parent = remaining
+                    .filter {
+                        $0.path != folder.path
+                            && LibraryPath.isInside(folder.path, root: $0.path)
+                    }
+                    .max { $0.path.count < $1.path.count }
+                if let parent {
+                    try database.adoptFiles(
+                        fromFolderID: folder.id,
+                        toFolderID: parent.id,
+                        pathPrefix: pathPrefix
+                    )
+                }
                 try database.removeFolder(id: folder.id)
             }.value
             if selection == .folder(folder.id) {
                 selection = .all
             }
             if case .subfolder(let path) = selection,
-               path.hasPrefix(folder.path + "/") {
+               LibraryPath.isInside(path, root: folder.path) {
                 selection = .all
             }
             await reload()
@@ -1086,6 +1523,119 @@ final class AppModel {
         }
     }
 
+    /// Excludes a folder subtree from indexing. Font files stay on disk; their
+    /// rows and any active registrations go away. The sidebar keeps an ignored
+    /// row so the exclusion stays reversible.
+    func ignoreFolder(path: String) async {
+        guard let database else { return }
+        let canonical = LibraryPath.resolve(path)
+        let activeTargets = snapshot.faces
+            .filter {
+                LibraryPath.isInside($0.path, root: canonical)
+                    && activeFaceIDs.contains($0.id)
+            }
+            .map {
+                ActivationTarget(
+                    faceID: $0.id,
+                    path: $0.path,
+                    postscriptName: $0.postscriptName
+                )
+            }
+        if !activeTargets.isEmpty, let activationEngine {
+            let outcome = await activationEngine.deactivate(activeTargets)
+            refreshActive()
+            if !outcome.failures.isEmpty {
+                errorMessage = outcome.summary
+                return
+            }
+        }
+
+        do {
+            try await Task.detached {
+                try database.ignorePath(canonical)
+                try database.deleteFiles(under: canonical)
+            }.value
+            if case .subfolder(let selected) = selection,
+               LibraryPath.isInside(selected, root: canonical) {
+                selection = .all
+            }
+            await reload()
+            setupWatching()
+            status = "Ignoring \((canonical as NSString).lastPathComponent)"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func unignoreFolder(path: String) async {
+        guard let database else { return }
+        let canonical = LibraryPath.resolve(path)
+        do {
+            try await Task.detached {
+                try database.unignorePath(canonical)
+            }.value
+            ignoredPaths = (try? database.ignoredPaths()) ?? ignoredPaths
+            let affected = folders
+                .filter {
+                    LibraryPath.isInside($0.path, root: canonical)
+                        || LibraryPath.isInside(canonical, root: $0.path)
+                }
+                .map(\.path)
+            if affected.isEmpty {
+                await reload()
+            } else {
+                await scan(rootPaths: affected)
+            }
+            setupWatching()
+            status = "Indexing \((canonical as NSString).lastPathComponent) again"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Removes every file row whose status is not `ok`. Missing rows persist by
+    /// default so collections survive an offline volume; this is the explicit
+    /// cleanup from the Warnings page.
+    func removeMissingFiles() async {
+        guard let database else { return }
+        // A missing file can still own a journal row until reconcile runs.
+        // Clear those first so the rows are never dropped while fontd still
+        // holds a registration.
+        let stale = snapshot.faces
+            .filter { $0.fileStatus != "ok" && activeFaceIDs.contains($0.id) }
+            .map {
+                ActivationTarget(
+                    faceID: $0.id,
+                    path: $0.path,
+                    postscriptName: $0.postscriptName
+                )
+            }
+        if !stale.isEmpty, let activationEngine {
+            let outcome = await activationEngine.deactivate(stale)
+            refreshActive()
+            if !outcome.failures.isEmpty {
+                errorMessage = outcome.summary
+                return
+            }
+        }
+        do {
+            let removed = try await Task.detached {
+                try database.deleteMissingFiles()
+            }.value
+            refreshActive()
+            await reload()
+            status = removed == 0
+                ? "No missing entries to remove"
+                : "Removed \(removed) missing \(removed == 1 ? "entry" : "entries")"
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func isIgnored(_ path: String) -> Bool {
+        ignoredPaths.contains { LibraryPath.isInside(path, root: $0) }
+    }
+
     // MARK: - Watching
 
     private func setupWatching() {
@@ -1095,7 +1645,9 @@ final class AppModel {
         debounceTask?.cancel()
         sweepTask?.cancel()
 
-        let roots = folders.filter { $0.kind == .watched }.map(\.path)
+        let roots = folders
+            .filter { $0.kind == .watched && !isIgnored($0.path) }
+            .map(\.path)
         guard !roots.isEmpty else { return }
 
         let watcher = FolderWatcher()
@@ -1127,8 +1679,11 @@ final class AppModel {
         var reloadNeeded = false
         let manager = FileManager.default
 
-        for (root, paths) in changes {
+        for (root, changedPaths) in changes {
             guard let folder = folders.first(where: { $0.path == root }) else { continue }
+            guard !isIgnored(root) else { continue }
+            let paths = changedPaths.filter { !isIgnored($0) }
+            guard !paths.isEmpty else { continue }
 
             // A directory event means the subtree changed; scan the folder.
             var needsFullScan = false
@@ -1166,6 +1721,7 @@ final class AppModel {
         }
         if reloadNeeded {
             await reload()
+            await reconcileActivation()
         }
     }
 
@@ -1174,6 +1730,7 @@ final class AppModel {
         var changed = false
         for path in rootPaths {
             guard let folder = folders.first(where: { $0.path == path }) else { continue }
+            guard !isIgnored(path) else { continue }
             do {
                 let report = try await LibraryScanner(database: database)
                     .scan(folder: URL(fileURLWithPath: path), kind: folder.kind)
@@ -1185,6 +1742,7 @@ final class AppModel {
         }
         if changed {
             await reload()
+            await reconcileActivation()
         }
     }
 
@@ -1194,7 +1752,7 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(300))
                 guard !Task.isCancelled, let self else { return }
                 let roots = self.folders
-                    .filter { $0.kind == .watched }
+                    .filter { $0.kind == .watched && !self.isIgnored($0.path) }
                     .map(\.path)
                 await self.scan(rootPaths: roots)
             }
@@ -1204,6 +1762,7 @@ final class AppModel {
     func rescanAll() async {
         guard let database else { return }
         for folder in folders {
+            guard !isIgnored(folder.path) else { continue }
             status = "Scanning \(folder.name)…"
             do {
                 let report = try await LibraryScanner(database: database)
@@ -1215,6 +1774,7 @@ final class AppModel {
         }
         await reload()
         folders = (try? database.folders()) ?? folders
+        await reconcileActivation()
     }
 
     // MARK: - Visible rows
@@ -1267,6 +1827,9 @@ final class AppModel {
         case .problems:
             families = []
             scope = .faces([])
+        case .googleFonts:
+            families = []
+            scope = .faces([])
         }
         // The denominator is the current sidebar item, including system fonts
         // that a global toggle may hide. It is never the whole library unless
@@ -1312,11 +1875,11 @@ final class AppModel {
     /// folders exist, so those show a path that starts distinctively.
     var folderTitles: [String: String] {
         var leafCounts: [String: Int] = [:]
-        for folder in folders {
+        for folder in displayFolders {
             leafCounts[folder.name, default: 0] += 1
         }
         var titles: [String: String] = [:]
-        for folder in folders {
+        for folder in displayFolders {
             titles[folder.id] = (leafCounts[folder.name] ?? 0) > 1
                 ? folder.displayPath
                 : folder.name
@@ -1329,6 +1892,9 @@ final class AppModel {
             return "\(problemCount.formatted()) "
                 + (problemCount == 1 ? "warning" : "warnings")
         }
+        if selection == .googleFonts {
+            return "Google Fonts"
+        }
         let visible = visibleFontCount.formatted()
         let total = selectionFontCount.formatted()
         if visibleFontCount == selectionFontCount {
@@ -1338,17 +1904,39 @@ final class AppModel {
     }
 
     func representativeFace(for family: CatalogFamily) -> CatalogFace? {
-        let faces = snapshot.faces(in: family)
-        return faces.first { !$0.isItalic && $0.weightClass == 400 }
-            ?? faces.first { !$0.isItalic }
-            ?? faces.first
+        let readable = snapshot.faces(in: family).filter { $0.fileStatus == "ok" }
+        guard !readable.isEmpty else { return nil }
+        let scoped: [CatalogFace]
+        if let path = selectedFolderPath {
+            scoped = readable.filter { LibraryPath.isInside($0.path, root: path) }
+        } else {
+            scoped = []
+        }
+        let pool = scoped.isEmpty ? readable : scoped
+        if let active = pool.first(where: { activeFaceIDs.contains($0.id) }) {
+            return active
+        }
+        return pool.first { !$0.isItalic && $0.weightClass == 400 }
+            ?? pool.first { !$0.isItalic }
+            ?? pool.first
+    }
+
+    private var selectedFolderPath: String? {
+        switch selection {
+        case .folder(let folderID):
+            return folders.first(where: { $0.id == folderID })?.path
+        case .subfolder(let subfolderPath):
+            return subfolderPath
+        default:
+            return nil
+        }
     }
 
     private func familyIDs(forFolderPath path: String) -> Set<String> {
         if let cached = folderFamilyIDs[path] { return cached }
-        let prefix = path.hasSuffix("/") ? path : path + "/"
         var ids = Set<String>()
-        for face in snapshot.faces where face.path.hasPrefix(prefix) {
+        for face in snapshot.faces
+        where LibraryPath.isInside(face.path, root: path) {
             ids.insert(face.familyKey)
         }
         folderFamilyIDs[path] = ids

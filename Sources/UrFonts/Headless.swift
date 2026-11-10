@@ -37,6 +37,10 @@ enum Headless {
             exit(detail())
         case "add-files":
             exit(addFiles())
+        case "ignore-folder":
+            exit(ignoreFolder())
+        case "settings":
+            exit(settings())
         default:
             FileHandle.standardError.write(Data("unknown headless scenario: \(scenario)\n".utf8))
             exit(1)
@@ -130,6 +134,9 @@ enum Headless {
         if CommandLine.arguments.contains("--active") {
             model.selection = .active
         }
+        if CommandLine.arguments.contains("--google") {
+            model.selection = .googleFonts
+        }
         if CommandLine.arguments.contains("--light") {
             model.backgroundColor = .white
             model.textColor = .black
@@ -144,6 +151,10 @@ enum Headless {
            index + 1 < CommandLine.arguments.count,
            let size = Double(CommandLine.arguments[index + 1]) {
             model.sampleSize = size
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--text"),
+           index + 1 < CommandLine.arguments.count {
+            model.sampleText = CommandLine.arguments[index + 1]
         }
         if let index = CommandLine.arguments.firstIndex(of: "--script"),
            index + 1 < CommandLine.arguments.count,
@@ -160,6 +171,8 @@ enum Headless {
         )
         if model.selection == .problems {
             logger.check(model.visibleStatus.contains("warning"), "status counts warnings")
+        } else if model.selection == .googleFonts {
+            logger.check(model.visibleStatus == "Google Fonts", "status names the host")
         } else if model.selection == .active {
             logger.check(
                 model.selectionFontCount == model.activeFaceIDs.count,
@@ -305,8 +318,176 @@ enum Headless {
         return logger.finish()
     }
 
-    /// Renders the family detail page, preferring a variable family so the axis
-    /// controls and variation rendering are exercised.
+    /// Proves the folder-exclusion seam end to end against a temporary
+    /// database: index a root with a nested cache, ignore the cache, rescan,
+    /// then stop ignoring and get the fonts back.
+    private static func ignoreFolder() -> Int32 {
+        let logger = Logger(name: "ignore-folder")
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+
+        logger.check(!app.isActive, "process is not active")
+
+        let sources = CommandLine.arguments.filter {
+            ["ttf", "otf", "ttc", "otc", "dfont"]
+                .contains(($0 as NSString).pathExtension.lowercased())
+                && FileManager.default.fileExists(atPath: $0)
+        }
+        logger.check(sources.count >= 2, "found two font paths")
+        guard sources.count >= 2 else { return logger.finish() }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("urfonts-ignore-\(UUID().uuidString)", isDirectory: true)
+        let cache = root.appendingPathComponent("Cache", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        do {
+            try FileManager.default.createDirectory(
+                at: cache,
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.copyItem(
+                at: URL(fileURLWithPath: sources[0]),
+                to: root.appendingPathComponent("RootFont.ttf")
+            )
+            try FileManager.default.copyItem(
+                at: URL(fileURLWithPath: sources[1]),
+                to: cache.appendingPathComponent("CachedFont.ttf")
+            )
+        } catch {
+            logger.check(false, "fixture folders: \(error.localizedDescription)")
+            return logger.finish()
+        }
+
+        let model = AppModel()
+        Task { @MainActor in await model.start() }
+        let launchDeadline = Date().addingTimeInterval(15)
+        while model.isLoading, Date() < launchDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        logger.check(!model.isLoading, "library loaded")
+
+        func run(_ work: @escaping @MainActor () async -> Void, _ label: String) {
+            final class Flag {
+                var done = false
+            }
+            let flag = Flag()
+            Task { @MainActor in
+                await work()
+                flag.done = true
+            }
+            let deadline = Date().addingTimeInterval(15)
+            while !flag.done, Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            }
+            logger.check(flag.done, label)
+        }
+
+        let canonicalRoot = LibraryPath.canonical(root.path)
+        func rootFaceCount() -> Int {
+            model.snapshot.faces.reduce(0) {
+                $0 + (LibraryPath.isInside($1.path, root: canonicalRoot) ? 1 : 0)
+            }
+        }
+
+        run({ await model.addFolder(root, kind: .staticFolder) }, "indexed root")
+        logger.check(rootFaceCount() == 2, "root has two fonts")
+        model.requestAddFolder(cache, kind: .staticFolder)
+        logger.check(
+            model.pendingFolderAdd?.warnings.isEmpty == false,
+            "adding inside a root warns"
+        )
+        model.cancelPendingFolderAdd()
+
+        let canonicalCache = LibraryPath.canonical(cache.path)
+        run({ await model.ignoreFolder(path: cache.path) }, "ignore finished")
+        logger.check(rootFaceCount() == 1, "cache font left the snapshot")
+        logger.check(model.ignoredPaths == [canonicalCache], "exclusion recorded")
+        logger.check(model.displayFolders.count == 1, "one root folder remains")
+        let cacheNode = model.folderTreeRoots.first?.children?
+            .first(where: { $0.name == "Cache" })
+        logger.check(cacheNode?.isIgnored == true, "sidebar keeps an ignored row")
+        model.requestAddFolder(cache, kind: .watched)
+        logger.check(
+            model.pendingFolderAdd?.warnings.isEmpty == false,
+            "adding inside an ignored folder warns"
+        )
+        model.cancelPendingFolderAdd()
+
+        run({ await model.addFolder(root, kind: .staticFolder) }, "rescanned root")
+        logger.check(rootFaceCount() == 1, "rescan skips the ignored folder")
+
+        run({ await model.unignoreFolder(path: cache.path) }, "unignore finished")
+        logger.check(rootFaceCount() == 2, "cache font returned")
+        logger.check(model.ignoredPaths.isEmpty, "exclusion cleared")
+
+        try? FileManager.default.removeItem(at: cache.appendingPathComponent("CachedFont.ttf"))
+        run({ await model.addFolder(root, kind: .staticFolder) }, "rescan after delete")
+        logger.check(model.missingFileCount == 1, "deleted file became missing")
+        run({ await model.removeMissingFiles() }, "missing cleanup finished")
+        logger.check(rootFaceCount() == 1, "missing row removed")
+        logger.check(model.missingFileCount == 0, "warning count cleared")
+        logger.check(!app.isActive, "still not active")
+
+        return logger.finish()
+    }
+
+    /// Renders the Settings window offscreen so the ignored-folder list and
+    /// detector suggestions can be checked without taking focus.
+    private static func settings() -> Int32 {
+        let logger = Logger(name: "settings")
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+
+        let model = AppModel()
+        Task { @MainActor in await model.start() }
+        let deadline = Date().addingTimeInterval(15)
+        while model.isLoading, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        logger.check(!model.isLoading, "library loaded")
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 440),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+        window.contentView = NSHostingView(
+            rootView: IgnoredFoldersSettingsView(model: model)
+        )
+        window.orderBack(nil)
+        window.displayIfNeeded()
+
+        let settle = Date().addingTimeInterval(1.5)
+        while Date() < settle {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        window.displayIfNeeded()
+
+        guard let content = window.contentView,
+              let representation = content.bitmapImageRepForCachingDisplay(
+                in: content.bounds
+              ) else {
+            logger.check(false, "captured settings")
+            window.orderOut(nil)
+            return logger.finish()
+        }
+        content.cacheDisplay(in: content.bounds, to: representation)
+        if let png = representation.representation(using: .png, properties: [:]) {
+            let url = logger.directory.appendingPathComponent("settings.png")
+            try? png.write(to: url)
+            logger.check(FileManager.default.fileExists(atPath: url.path), "wrote settings.png")
+        } else {
+            logger.check(false, "encoded settings.png")
+        }
+        logger.check(!app.isActive, "still not active")
+        window.orderOut(nil)
+        return logger.finish()
+    }
+
     private static func detail() -> Int32 {
         let logger = Logger(name: "detail")
         let app = NSApplication.shared
@@ -321,9 +502,27 @@ enum Headless {
         }
         logger.check(!model.isLoading, "library loaded")
 
-        guard let family = model.snapshot.families.first(where: { family in
-            model.snapshot.faces(in: family).contains(where: \.isVariable)
-        }) ?? model.snapshot.families.first else {
+        if let index = CommandLine.arguments.firstIndex(of: "--text"),
+           index + 1 < CommandLine.arguments.count {
+            model.sampleText = CommandLine.arguments[index + 1]
+        }
+
+        let requestedFamily: String? = {
+            guard let index = CommandLine.arguments.firstIndex(of: "--family"),
+                  index + 1 < CommandLine.arguments.count else { return nil }
+            return CommandLine.arguments[index + 1]
+        }()
+        let family = requestedFamily
+            .flatMap { name in
+                model.snapshot.families.first {
+                    $0.name.caseInsensitiveCompare(name) == .orderedSame
+                }
+            }
+            ?? model.snapshot.families.first(where: { family in
+                model.snapshot.faces(in: family).contains(where: \.isVariable)
+            })
+            ?? model.snapshot.families.first
+        guard let family else {
             logger.check(false, "found a family")
             return logger.finish()
         }

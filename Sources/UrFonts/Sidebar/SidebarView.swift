@@ -7,6 +7,7 @@ struct SidebarView: View {
     @Bindable var model: AppModel
     @State private var pendingRemoval: LibraryFolder?
     @State private var pendingWatch: LibraryFolder?
+    @State private var pendingIgnore: String?
     @State private var renameTarget: LibraryFolder?
     @State private var renameText = ""
     @State private var collectionToRename: FontCollection?
@@ -49,6 +50,15 @@ struct SidebarView: View {
                 .help("Duplicate PostScript names and missing files")
             }
 
+            Section("Hosts") {
+                HStack {
+                    Label("Google Fonts", systemImage: "globe")
+                    Spacer()
+                }
+                .tag(SidebarSelection.googleFonts)
+                .help("Browse and download Google Fonts")
+            }
+
             Section("Folders") {
                 OutlineGroup(model.folderTreeRoots, children: \.children) { node in
                     folderNodeRow(node)
@@ -67,6 +77,16 @@ struct SidebarView: View {
                     )
                     .tag(SidebarSelection.collection(collection.id))
                     .contextMenu {
+                        let count = model.collectionFontCounts[collection.id] ?? 0
+                        Button("Activate All") {
+                            Task { await model.setCollectionActive(collection, active: true) }
+                        }
+                        .disabled(count == 0)
+                        Button("Deactivate All") {
+                            Task { await model.setCollectionActive(collection, active: false) }
+                        }
+                        .disabled(count == 0)
+                        Divider()
                         Button("Rename…") {
                             collectionToRename = collection
                             collectionName = collection.name
@@ -158,6 +178,26 @@ struct SidebarView: View {
         } message: {
             Text("Watching rescans the folder and keeps it in sync from then on.")
         }
+        .confirmationDialog(
+            "Ignore \(pendingIgnore.map { ($0 as NSString).lastPathComponent } ?? "")?",
+            isPresented: Binding(
+                get: { pendingIgnore != nil },
+                set: { if !$0 { pendingIgnore = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Ignore Folder", role: .destructive) {
+                if let path = pendingIgnore {
+                    Task { await model.ignoreFolder(path: path) }
+                }
+                pendingIgnore = nil
+            }
+            Button("Cancel", role: .cancel) { pendingIgnore = nil }
+        } message: {
+            Text("Its fonts leave the library and active ones are deactivated. "
+                + "The folder and its files stay on disk. Stop ignoring it from "
+                + "the sidebar to index it again.")
+        }
         .alert(
             "New Collection",
             isPresented: $showNewCollection
@@ -227,6 +267,9 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func menu(for folder: LibraryFolder) -> some View {
+        let index = model.displayFolders.firstIndex(where: { $0.id == folder.id }) ?? 0
+        let count = model.displayFolders.count
+
         Toggle(
             "Watched",
             isOn: Binding(
@@ -240,6 +283,16 @@ struct SidebarView: View {
                 }
             )
         )
+
+        Button("Move Up") {
+            model.moveFolder(id: folder.id, by: -1)
+        }
+        .disabled(index == 0)
+
+        Button("Move Down") {
+            model.moveFolder(id: folder.id, by: 1)
+        }
+        .disabled(index >= count - 1)
 
         Button("Rename…") {
             renameText = folder.name
@@ -259,6 +312,10 @@ struct SidebarView: View {
                     kind: folder.kind
                 )
             }
+        }
+
+        Button("Ignore This Folder…") {
+            pendingIgnore = folder.path
         }
 
         Button("Remove from Library…", role: .destructive) {
@@ -289,17 +346,19 @@ struct SidebarView: View {
         HStack {
             Label(
                 node.name,
-                systemImage: node.folderID != nil && node.isWatched
-                    ? "magnifyingglass"
-                    : "folder"
+                systemImage: node.isIgnored
+                    ? "eye.slash"
+                    : (node.folderID != nil && node.isWatched ? "magnifyingglass" : "folder")
             )
             .lineLimit(1)
             .truncationMode(.tail)
             Spacer()
-            Text("\(node.fontCount)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+            if !node.isIgnored {
+                Text("\(node.fontCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
     }
 
@@ -311,6 +370,9 @@ struct SidebarView: View {
     }
 
     private func help(for node: FolderNode) -> String {
+        if node.isIgnored {
+            return "\(node.id)\nIgnored · not indexed"
+        }
         if let folderID = node.folderID,
            let folder = model.folders.first(where: { $0.id == folderID }) {
             return help(for: folder)
@@ -320,8 +382,17 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func nodeMenu(for node: FolderNode) -> some View {
-        if let folderID = node.folderID,
-           let folder = model.folders.first(where: { $0.id == folderID }) {
+        if node.isIgnored {
+            Button("Stop Ignoring") {
+                Task { await model.unignoreFolder(path: node.id) }
+            }
+            Button("Reveal in Finder") { model.revealPath(node.id) }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(node.id, forType: .string)
+            }
+        } else if let folderID = node.folderID,
+                  let folder = model.folders.first(where: { $0.id == folderID }) {
             menu(for: folder)
         } else {
             Button("Reveal in Finder") { model.revealPath(node.id) }
@@ -329,6 +400,8 @@ struct SidebarView: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(node.id, forType: .string)
             }
+            Divider()
+            Button("Ignore This Folder…") { pendingIgnore = node.id }
         }
     }
 
@@ -404,9 +477,9 @@ func chooseFolder(using model: AppModel, watched: Bool) {
         let urls = panel.urls
         let kind: FolderKind = watched ? .watched : .staticFolder
         Task { @MainActor in
-            for url in urls {
-                await model.addFolder(url, kind: kind)
-            }
+            model.requestAddFolders(
+                urls.map { FolderAddEntry(url: $0, kind: kind) }
+            )
         }
     }
 }

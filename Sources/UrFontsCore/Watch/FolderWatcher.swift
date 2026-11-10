@@ -24,7 +24,7 @@ public final class FolderWatcher: @unchecked Sendable {
         stop()
         lock.lock()
         self.roots = roots.map {
-            ($0, URL(fileURLWithPath: $0).resolvingSymlinksInPath().path)
+            ($0, LibraryPath.canonical($0))
         }
         self.handler = handler
         lock.unlock()
@@ -75,9 +75,9 @@ public final class FolderWatcher: @unchecked Sendable {
         var changes: [(root: String, path: String)] = []
         var seen = Set<String>()
         for path in paths {
-            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            let resolved = LibraryPath.canonical(path)
             for root in roots
-            where resolved == root.resolved || resolved.hasPrefix(root.resolved + "/") {
+            where LibraryPath.isInside(resolved, root: root.resolved) {
                 let suffix = resolved.dropFirst(root.resolved.count)
                 let originalPath = root.original + suffix
                 let key = root.original + "\u{0}" + originalPath

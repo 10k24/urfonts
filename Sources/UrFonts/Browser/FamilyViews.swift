@@ -24,7 +24,9 @@ enum PreviewLine {
         let available = max(1, rect.width - inset * 2)
         var line = makeLine(text: text, font: font, color: color)
         if CTLineGetTypographicBounds(line, nil, nil, nil) > available {
-            let ellipsis = makeLine(text: "…", font: font, color: color)
+            // ASCII periods, not U+2026: some display fonts map the ellipsis
+            // to a decorative or "NO GLYPH" stamp.
+            let ellipsis = makeLine(text: "...", font: font, color: color)
             if let truncated = CTLineCreateTruncatedLine(
                 line,
                 Double(available),
@@ -37,9 +39,10 @@ enum PreviewLine {
         draw(line, font: font, color: color, in: context, rect: rect, x: inset)
     }
 
-    /// Grid tiles fit instead of truncating: a wide font shrinks until the whole
-    /// sample is visible. Cropping here reads as broken spacing.
-    static func drawFitted(
+    /// Grid tiles honor the sample size. Shrink only when one line is taller
+    /// than the tile, then truncate horizontally. Width-fitting would make the
+    /// size slider a no-op.
+    static func drawGrid(
         text: String,
         font: CTFont,
         color: NSColor,
@@ -47,45 +50,57 @@ enum PreviewLine {
         rect: CGRect,
         inset: CGFloat = 6
     ) {
-        let availableWidth = max(1, rect.width - inset * 2)
         let availableHeight = max(1, rect.height - inset * 2)
-        let probe = makeLine(text: text, font: font, color: color)
-        let width = CTLineGetTypographicBounds(probe, nil, nil, nil)
         let height = CTFontGetAscent(font) + CTFontGetDescent(font)
-
-        var scale: CGFloat = 1
-        if width > availableWidth {
-            scale = min(scale, availableWidth / width)
-        }
+        let sized: CTFont
         if height > availableHeight {
-            scale = min(scale, availableHeight / height)
+            let scale = availableHeight / height
+            sized = Self.font(from: font, size: max(8, CTFontGetSize(font) * scale))
+        } else {
+            sized = font
         }
-        let size = max(8, CTFontGetSize(font) * scale)
-        let fitted = Self.font(from: font, size: size)
-        let line = makeLine(text: text, font: fitted, color: color)
-        draw(line, font: fitted, color: color, in: context, rect: rect, x: inset)
+        drawTruncated(
+            text: text,
+            font: sized,
+            color: color,
+            in: context,
+            rect: rect,
+            inset: inset
+        )
+    }
+
+    /// Line breaks and vertical placement for a wrapped list preview.
+    ///
+    /// One owner for the geometry: the Canvas draws it and the row aligns the
+    /// family metadata to `firstBaselineFromTop`.
+    struct Layout {
+        let lines: [CTLine]
+        let lineHeight: CGFloat
+        let inkAscent: CGFloat
+        let top: CGFloat
+
+        /// Distance from the top of the drawing rect to the first baseline.
+        var firstBaselineFromTop: CGFloat { top + inkAscent }
     }
 
     /// List rows wrap to at most `maxLines`; the last line gets an ellipsis if
     /// the text does not fit. Grid tiles keep the single-line fitted drawing.
-    static func drawWrapped(
+    static func layout(
         text: String,
         font: CTFont,
-        color: NSColor,
-        in context: CGContext,
-        rect: CGRect,
+        width: CGFloat,
+        height: CGFloat,
         inset: CGFloat = 6,
         maxLines: Int = 2
-    ) {
-        let availableWidth = max(1, rect.width - inset * 2)
+    ) -> Layout? {
+        let availableWidth = max(1, width - inset * 2)
         let attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor,
         ]
         let attributed = NSAttributedString(string: text, attributes: attributes)
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)
         let totalLength = attributed.length
-        guard totalLength > 0 else { return }
+        guard totalLength > 0 else { return nil }
 
         var lines: [CTLine] = []
         var start = 0
@@ -102,10 +117,11 @@ enum PreviewLine {
             ))
             start += count
         }
-        guard !lines.isEmpty else { return }
+        guard !lines.isEmpty else { return nil }
 
         if start < totalLength, let last = lines.popLast() {
-            let ellipsis = makeLine(text: "…", font: font, color: color)
+            // ASCII periods avoid a font's decorative U+2026 glyph.
+            let ellipsis = makeLine(text: "...", font: font, color: .labelColor)
             let truncated = CTLineCreateTruncatedLine(
                 last,
                 Double(availableWidth),
@@ -134,16 +150,36 @@ enum PreviewLine {
         // Center when the block fits. When the text is larger than the row, pin
         // it to the top so scaling grows downward instead of clipping upward.
         let top: CGFloat
-        if blockHeight <= rect.height - 12 {
-            top = max(0, (rect.height - blockHeight) / 2)
+        if blockHeight <= height - 12 {
+            top = max(0, (height - blockHeight) / 2)
         } else {
             top = 6
         }
+        return Layout(
+            lines: lines,
+            lineHeight: lineHeight,
+            inkAscent: inkAscent,
+            top: top
+        )
+    }
 
-        for (index, line) in lines.enumerated() {
-            let baseline = rect.height - top - CGFloat(index) * lineHeight - inkAscent
+    static func draw(
+        layout: Layout,
+        font: CTFont,
+        color: NSColor,
+        in context: CGContext,
+        rect: CGRect,
+        inset: CGFloat = 6
+    ) {
+        for (index, line) in layout.lines.enumerated() {
+            let baseline = rect.height
+                - layout.top
+                - CGFloat(index) * layout.lineHeight
+                - layout.inkAscent
             drawLine(
                 line,
+                font: font,
+                color: color,
                 in: context,
                 rect: rect,
                 x: inset,
@@ -174,6 +210,8 @@ enum PreviewLine {
         let descent = CTFontGetDescent(font)
         drawLine(
             line,
+            font: font,
+            color: color,
             in: context,
             rect: rect,
             x: x,
@@ -183,6 +221,8 @@ enum PreviewLine {
 
     private static func drawLine(
         _ line: CTLine,
+        font: CTFont,
+        color: NSColor,
         in context: CGContext,
         rect: CGRect,
         x: CGFloat,
@@ -191,13 +231,67 @@ enum PreviewLine {
         context.saveGState()
         context.translateBy(x: rect.minX, y: rect.maxY)
         context.scaleBy(x: 1, y: -1)
-        context.textPosition = CGPoint(x: x, y: baselineFromBottom)
-        CTLineDraw(line, context)
+        context.setFillColor(color.cgColor)
+        drawRuns(
+            line,
+            primaryFont: font,
+            in: context,
+            origin: CGPoint(x: x, y: baselineFromBottom)
+        )
         context.restoreGState()
+    }
+
+    /// CoreText falls back to another installed font for missing characters.
+    /// That is wrong for a font preview: the user must see this font's .notdef.
+    /// Draw primary runs normally, and replace every fallback run's glyphs with
+    /// the primary font's glyph 0 at the same positions.
+    private static func drawRuns(
+        _ line: CTLine,
+        primaryFont: CTFont,
+        in context: CGContext,
+        origin: CGPoint
+    ) {
+        let primaryName = CTFontCopyPostScriptName(primaryFont) as String
+        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+        for run in runs {
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { continue }
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            let runFont = attributes[kCTFontAttributeName] as! CTFont
+            let runName = CTFontCopyPostScriptName(runFont) as String
+
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
+            for index in 0..<count {
+                positions[index].x += origin.x
+                positions[index].y += origin.y
+            }
+
+            if runName == primaryName {
+                CTFontDrawGlyphs(runFont, glyphs, positions, count, context)
+            } else {
+                var tofu = [CGGlyph](repeating: 0, count: count)
+                CTFontDrawGlyphs(primaryFont, &tofu, positions, count, context)
+            }
+        }
     }
 }
 
 // MARK: - Rows
+
+extension VerticalAlignment {
+    private enum PreviewBaseline: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat {
+            context[VerticalAlignment.center]
+        }
+    }
+
+    /// Aligns the family metadata's first text baseline with the first line of
+    /// the preview. The Canvas supplies the guide from `PreviewLine.Layout`.
+    static let previewBaseline = VerticalAlignment(PreviewBaseline.self)
+}
 
 struct FamilyRow: View, Equatable {
     let family: CatalogFamily
@@ -212,48 +306,27 @@ struct FamilyRow: View, Equatable {
     let rowHeight: CGFloat
 
     @State private var loaded: LoadedFont?
+    @State private var previewLayout: PreviewLine.Layout?
+    @State private var previewWidth: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(family.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Text("\(family.faceCount) \(family.faceCount == 1 ? "style" : "styles")")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 230, alignment: .leading)
+        let previewBaseline = previewLayout?.firstBaselineFromTop ?? rowHeight / 2
+        return HStack(alignment: .previewBaseline, spacing: 16) {
+            metadata
+                .alignmentGuide(.previewBaseline) { $0[.firstTextBaseline] }
 
-            Canvas { context, size in
-                guard let loaded else { return }
-                let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
-                context.withCGContext { cg in
-                    PreviewLine.drawWrapped(
-                        text: sampleText,
-                        font: font,
-                        color: NSColor(textColor),
-                        in: cg,
-                        rect: CGRect(origin: .zero, size: size),
-                        maxLines: maxLines
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if family.hasVariableFace {
-                Text("VF")
-                    .font(.system(size: 9, weight: .semibold))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
-            }
-
-            ActivationDot(state: activation, action: onToggle)
+            preview
+                .alignmentGuide(.previewBaseline) { _ in previewBaseline }
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 28)
+        .padding(.leading, PreviewMetrics.rowHorizontalInset)
+        .padding(
+            .trailing,
+            PreviewMetrics.rowHorizontalInset
+                + PreviewMetrics.rowTrailingInset
+                + (family.hasVariableFace ? PreviewMetrics.variableBadgeReserve : 0)
+        )
         .frame(height: rowHeight)
+        .overlay(alignment: .trailing) { accessories }
         .background(backgroundColor)
         .overlay(alignment: .bottom) {
             Rectangle()
@@ -266,13 +339,131 @@ struct FamilyRow: View, Equatable {
                 path: face.path,
                 faceIndex: face.index
             )
+            updateLayout()
         }
+        .onChange(of: layoutKey) { _, _ in
+            updateLayout()
+        }
+    }
+
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Text(family.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                if family.hasDuplicatePostScriptNames || family.missingFaceCount > 0 {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                        .help(familyWarning)
+                }
+            }
+            Text(family.countLabel)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 230, alignment: .leading)
+    }
+
+    private var preview: some View {
+        Canvas { context, size in
+            guard let loaded, let previewLayout else { return }
+            let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
+            context.withCGContext { cg in
+                PreviewLine.draw(
+                    layout: previewLayout,
+                    font: font,
+                    color: NSColor(textColor),
+                    in: cg,
+                    rect: CGRect(origin: .zero, size: size)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { setPreviewWidth(proxy.size.width) }
+                    .onChange(of: proxy.size.width) { _, width in
+                        setPreviewWidth(width)
+                    }
+            }
+        }
+    }
+
+    private var accessories: some View {
+        HStack(spacing: PreviewMetrics.accessorySpacing) {
+            if family.hasVariableFace {
+                Text("VF")
+                    .font(.system(size: PreviewMetrics.badgeFontSize, weight: .semibold))
+                    .padding(.horizontal, PreviewMetrics.badgeHorizontalPadding)
+                    .padding(.vertical, PreviewMetrics.badgeVerticalPadding)
+                    .background(.quaternary, in: Capsule())
+            }
+            ActivationDot(state: activation, action: onToggle)
+        }
+        .padding(.trailing, PreviewMetrics.rowHorizontalInset)
+    }
+
+    private var familyWarning: String {
+        var reasons: [String] = []
+        if family.hasDuplicatePostScriptNames {
+            reasons.append("Multiple files share a PostScript name")
+        }
+        if family.missingFaceCount > 0 {
+            reasons.append("\(family.missingFaceCount) file(s) missing")
+        }
+        return reasons.joined(separator: ". ")
     }
 
     /// Size is deliberately not part of the key: it changes per slider tick and
     /// must not reload the face or blank the preview.
     private var loadKey: String {
         "\(face?.path ?? ""):\(face?.index ?? 0)"
+    }
+
+    /// Everything that changes the preview line breaks or vertical placement.
+    private struct LayoutKey: Equatable {
+        let path: String
+        let faceIndex: Int
+        let text: String
+        let size: Double
+        let maxLines: Int
+        let rowHeight: CGFloat
+        let width: CGFloat
+    }
+
+    private var layoutKey: LayoutKey {
+        LayoutKey(
+            path: face?.path ?? "",
+            faceIndex: face?.index ?? 0,
+            text: sampleText,
+            size: sampleSize,
+            maxLines: maxLines,
+            rowHeight: rowHeight,
+            width: previewWidth
+        )
+    }
+
+    private func setPreviewWidth(_ width: CGFloat) {
+        guard abs(previewWidth - width) > 0.5 else { return }
+        previewWidth = width
+    }
+
+    private func updateLayout() {
+        guard let loaded, previewWidth > 0 else {
+            previewLayout = nil
+            return
+        }
+        let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
+        previewLayout = PreviewLine.layout(
+            text: sampleText,
+            font: font,
+            width: previewWidth,
+            height: rowHeight,
+            maxLines: maxLines
+        )
     }
 
     static func == (left: FamilyRow, right: FamilyRow) -> Bool {
@@ -307,7 +498,7 @@ struct FamilyTile: View, Equatable {
                 guard let loaded else { return }
                 let font = PreviewLine.font(from: loaded.ctFont, size: sampleSize)
                 context.withCGContext { cg in
-                    PreviewLine.drawFitted(
+                    PreviewLine.drawGrid(
                         text: sampleText,
                         font: font,
                         color: NSColor(textColor),
@@ -316,7 +507,7 @@ struct FamilyTile: View, Equatable {
                     )
                 }
             }
-            .frame(height: 76)
+            .frame(height: 140)
 
             Divider()
 
@@ -325,17 +516,19 @@ struct FamilyTile: View, Equatable {
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                 Spacer()
-                Text("\(family.faceCount)")
+                Text(
+                    family.hasDuplicatePostScriptNames
+                        ? "\(family.faceCount) files"
+                        : "\(family.faceCount)"
+                )
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .help(
-                        "\(family.faceCount) \(family.faceCount == 1 ? "style" : "styles")"
-                    )
+                    .help(family.countLabel)
                 ActivationDot(state: activation, action: onToggle)
             }
         }
         .padding(20)
-        .frame(height: 170, alignment: .top)
+        .frame(height: 240, alignment: .top)
         .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -376,25 +569,106 @@ struct ActivationDot: View {
         Group {
             switch state {
             case .installed:
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .help("Installed system font")
+                icon(
+                    symbol: "checkmark.square.fill",
+                    help: "Installed system font"
+                )
+            case .missing:
+                icon(symbol: "questionmark.square", help: "File missing")
+            case .blocked(let ownerPath):
+                icon(
+                    symbol: "square",
+                    help: "PostScript name already active from \(ownerPath)"
+                )
             case .none:
-                button(symbol: "circle", tint: .secondary, help: "Activate")
+                button(symbol: "square", tint: .secondary, help: "Activate")
             case .partial:
-                button(symbol: "circle.lefthalf.filled", tint: .accentColor, help: "Partially active, click to activate all")
+                button(
+                    symbol: "minus.square.fill",
+                    tint: .accentColor,
+                    help: "Partially active, click to activate all"
+                )
             case .all:
-                button(symbol: "circle.fill", tint: .accentColor, help: "Deactivate")
+                button(
+                    symbol: "checkmark.square.fill",
+                    tint: .accentColor,
+                    help: "Deactivate"
+                )
             }
         }
-        .frame(width: 20, height: 20)
+        .frame(
+            width: PreviewMetrics.activationHitSize,
+            height: PreviewMetrics.activationHitSize
+        )
+    }
+
+    private func icon(symbol: String, help: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: PreviewMetrics.activationIconSize))
+            .foregroundStyle(.tertiary)
+            .help(help)
+            .accessibilityLabel(help)
     }
 
     private func button(symbol: String, tint: Color, help: String) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13))
+                .font(.system(size: PreviewMetrics.activationIconSize))
+                .foregroundStyle(tint)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// Per-file control in the font sheet. A duplicate PostScript name is visibly
+/// blocked instead of failing after the click.
+struct FaceActivationControl: View {
+    let state: FaceActivationState
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            switch state {
+            case .available:
+                button(symbol: "square", tint: .secondary, help: "Activate")
+            case .active:
+                button(
+                    symbol: "checkmark.square.fill",
+                    tint: .accentColor,
+                    help: "Deactivate"
+                )
+            case .installed:
+                icon(symbol: "checkmark.square.fill", help: "Installed system font")
+            case .missing:
+                icon(symbol: "questionmark.square", help: "File missing")
+            case .blocked(let ownerPath):
+                icon(
+                    symbol: "square",
+                    help: "PostScript name already active from \(ownerPath)"
+                )
+            }
+        }
+        .frame(
+            width: PreviewMetrics.activationHitSize,
+            height: PreviewMetrics.activationHitSize
+        )
+    }
+
+    private func icon(symbol: String, help: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: PreviewMetrics.activationIconSize))
+            .foregroundStyle(.tertiary)
+            .help(help)
+            .accessibilityLabel(help)
+    }
+
+    private func button(symbol: String, tint: Color, help: String) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: PreviewMetrics.activationIconSize))
                 .foregroundStyle(tint)
                 .contentShape(Rectangle())
         }

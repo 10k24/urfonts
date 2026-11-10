@@ -3,7 +3,6 @@ import UrFontsCore
 
 struct GoogleFontsView: View {
     @Bindable var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var families: [GoogleFontFamily] = []
     @State private var query = ""
@@ -23,16 +22,20 @@ struct GoogleFontsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Google Fonts")
-                    .font(.title2.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Google Fonts")
+                        .font(.title2.weight(.semibold))
+                    Text("Downloads include licenses and are indexed automatically. "
+                        + "Activate them from All Fonts or Active.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Refresh") {
                     Task { await load(forceRefresh: true) }
                 }
                 .disabled(isLoading)
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
             }
 
             TextField("Search families or categories", text: $query)
@@ -50,7 +53,7 @@ struct GoogleFontsView: View {
                     Button("Retry") { Task { await load(forceRefresh: true) } }
                 }
             } else {
-                Text("\(filtered.count) families")
+                Text("\(filtered.count) font families")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -62,7 +65,7 @@ struct GoogleFontsView: View {
             }
         }
         .padding(20)
-        .frame(width: 760, height: 620)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await load(forceRefresh: false)
         }

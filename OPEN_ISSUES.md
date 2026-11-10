@@ -58,11 +58,13 @@ Locked decisions:
 
 ### Phase 3 - Activation
 
-- **Activation UI.** Collection activation, temporary activation from the UI, an
-  "activate more than N families" warning, and deactivate-all.
-- **Activation feedback.** Show the conflict reason inline and offer reveal in
-  Finder for a failed file.
-- **Style activation from the page.** Keyboard focus and bulk style toggles.
+- **Activation UI.** Temporary activation from the UI, an "activate more than N
+  families" warning, and a global deactivate-all. Collection bulk activation is
+  implemented.
+- **Activation failure feedback.** Duplicate conflicts show the owner path
+  inline. Add reveal-in-Finder for a failed file and a one-click retry.
+- **Style activation from the page.** Per-file checkboxes are implemented;
+  keyboard focus and bulk style toggles remain.
 
 ### Phase 4 - Watcher
 
@@ -83,19 +85,11 @@ Locked decisions:
 
 ### Phase 6 - Organize
 
-- **Collection polish.** Drag and drop, nested collections, multi-select adds.
+- **Collection polish.** Nested collections, multi-select adds. Drag-and-drop
+  was removed; it needs an AppKit or custom-list solution.
 - **Tags.** User tags with colors, auto tags from PANOSE, name and outline
   heuristics.
 - **Notes and ratings.**
-- **Nested folders.** The sidebar mirrors indexed directories as a lazy
-  disclosure tree. Roots are added folders; children come from file paths.
-  Selection is a path prefix.
-- **Individual font files.** Add Fonts (or a Finder drop) indexes selected
-  files. Files inside an indexed folder join it; others get a one-time folder
-  for their parent directory so the sidebar can still reveal them.
-- **Warnings.** Duplicate PostScript names (live files only) and missing or
-  unreadable files, grouped by type in collapsible disclosure sections, with
-  reveal and copy-path actions. Nothing is deleted.
 
 Gate: the warnings page reports the same set the database holds.
 
@@ -186,7 +180,7 @@ features are listed too, so the gap is explicit rather than implied.
 - Reboot persistence.
 - Fonts in `~/Library/Fonts`, `/Library/Fonts` and system folders stay locked.
 - Duplicate registration errors are treated as success only when scope matches.
-- Deactivate-all; removing a folder deactivates its active faces first.
+- Removing or ignoring a folder deactivates its active faces first.
 - Another app sees an activated font; Adobe may need a relaunch.
 
 **Browsing and preview**
@@ -234,7 +228,8 @@ features are listed too, so the gap is explicit rather than implied.
 
 **FontBase handoff**
 
-- Deactivate all in FontBase, quit, clear `~/Library/Fonts/FontBase` copies.
+- Deactivate all in FontBase and quit. Ignore its cache folder in the sidebar
+  (or move it out) so copies do not appear as installed duplicates.
 - Add its folders manually; compare family and collection counts with FontBase.
 - Recreate collections, activate the previous set, confirm no duplicate
   PostScript conflicts.
@@ -242,6 +237,7 @@ features are listed too, so the gap is explicit rather than implied.
 
 **Missing for parity (not verification)**
 
+- Deactivate-all.
 - OpenType feature filtering.
 - GlyphsApp language parity.
 
@@ -252,6 +248,9 @@ features are listed too, so the gap is explicit rather than implied.
 
 ### Backlog (lowest priority)
 
+- **Favorites.** Red heart toggle on individual fonts and families, plus a
+  Favorites section in the sidebar with a count. Store face IDs; a family
+  favorite covers all of its faces. Survives reindexing and settings export.
 - **Font designer workflow.** Re-exporting a font over an existing file is the
   common authoring loop and a known source of stale caches. Detect replacement
   by content hash delta, not only size and mtime. Reload the changed face
@@ -281,8 +280,8 @@ features are listed too, so the gap is explicit rather than implied.
   collections, samples and preview between machines or dotfiles. Revisit a
   read-only FontBase importer only if manual folder setup proves painful.
 - **FontBase handoff notes.** Document deactivating all fonts in FontBase,
-  quitting it, and clearing `~/Library/Fonts/FontBase` copies before activating
-  the same fonts in Ur Fonts, to avoid duplicate PostScript registrations.
+  quitting it, and ignoring its cache folder in Ur Fonts before activating the
+  same fonts, to avoid duplicate PostScript registrations.
 
 ## Needs Verification
 
@@ -299,6 +298,15 @@ features are listed too, so the gap is explicit rather than implied.
 - **Bug batch after first launch.** All Fonts selection, grid fitting, slider
   smoothness and the no-results footer were fixed and checked in headless
   captures; each still needs one pass in the live window.
+- **Duplicate metadata in third-party files.** A file can carry another font's
+  name table: a file named `Manera-Regular.otf` reports family `New Font` and
+  PostScript `NewFont-Regular`, so it groups with the real New Font file. This is
+  font metadata, not a preview-cache leak. The detail page shows each file path
+  and marks the shared PostScript name. Never rewrite the font file.
+- **Duplicate file versions.** Under `wk13_exports`, `Referential Mono 0.970_1`
+  shows its wk13 preview and checkbox; its missing FontBase copy is disabled as
+  missing; activating one version disables the other versions and names the
+  active path. The same rule applies across families.
 - **Activation in the real app.** Click a library family, confirm another app
   sees the font, quit and relaunch, and confirm the dot and journal survive.
   No fontd integration test runs in CI.
@@ -323,21 +331,39 @@ features are listed too, so the gap is explicit rather than implied.
   list and grid, the status bar size slider is independent, and system families
   sort alphabetically with dots stripped.
 - **Settings round trip.** Export settings, quit, clear a folder/collection,
-  import, and confirm folders, collections, samples and preview return.
+  import, and confirm folders, collections, samples, preview and ignored folder
+  paths return.
+- **No font fallback.** Type Arabic or another unsupported string into a Latin
+  font preview; missing characters show the font's `.notdef`, never GeezaPro or
+  another installed font. The Arabic auto-sample is not chosen unless the face
+  covers every sample character.
 - **Text growth direction.** Drag the status bar size slider from small to
   large; text should grow downward (or symmetrically while it fits), never only
   upward. The slider stays accent blue while the window is active.
-- **Google Fonts.** Open the sheet, search a family, download it, confirm its
-  styles appear in the library and activate; quit and relaunch to confirm the
-  managed folder is still indexed. Check the first load time and GitHub rate
-  limit behavior.
+- **Google Fonts.** Select Hosts → Google Fonts, search a family, download it,
+  confirm its styles appear in the library and activate; quit and relaunch to
+  confirm the managed folder is still indexed. Check the first load time and
+  GitHub rate limit behavior.
+- **Folder order.** Right-click Move Up/Move Down and relaunch: the order
+  sticks. A newly added folder lands at the bottom. On a clean library the three
+  macOS font folders are present, watched, and ordered first.
+- **Collection bulk activation.** Activate All and Deactivate All in a
+  collection context menu; dots update and other apps see the change.
+- **Style paths.** Open a family with multiple files; every style shows its
+  absolute path. Files with the same PostScript name show the duplicate triangle
+  and explanation.
+- **Installed marker.** System-font rows show a gray checked square at the same
+  size as the open activation square.
+- **Warning copy.** Right-click a warning row or its file path and copy the
+  message; copying a whole warning type includes every entry.
 - **Swap and counts.** Swap text/background colors and confirm samples mark
   dirty; confirm folder badges match All Fonts units and tooltips show files.
 - **Folder UX.** Two add flows, magnifier icon for watched folders, rename that
   changes only the label, watched checkbox with a rescan confirmation, reveal in
-  Finder, and removal that reports active fonts and deactivates them first.
-  Implemented and unit-tested at the store level; menu behaviour needs a live
-  window.
+  Finder, removal that reports active fonts and deactivates them first, and
+  Settings → Ignored Folders with detection suggestions.
+  Implemented and unit-tested at the store level; menu and Settings behaviour
+  need a live window.
 - **Axis slider smoothness.** The sheet now draws a fixed point size and changes
   only the variation, so weight changes no longer rescale the sample. Confirm
   300–400 interpolates smoothly on a real variable font.
@@ -364,9 +390,9 @@ features are listed too, so the gap is explicit rather than implied.
   inside the budget.
 - **Browser shell.** Sidebar with All Fonts and per-folder rows, Add Folder panel,
   rescan, toolbar search and list/grid toggle.
-- **Rows and previews.** Fixed-height family rows and grid tiles, one `CTLine`
-  per row in `Canvas`, `FontLoader` LRU with process-local CTFonts, variable-font
-  badge.
+- **Rows and previews.** Uniform family rows whose height grows with the sample
+  size, fixed-height grid tiles, one `CTLine` per row in `Canvas`, `FontLoader`
+  LRU with process-local CTFonts, variable-font badge.
 - **Preview settings.** Sample text, size, text color and background color,
   applied live to every row and tile.
 - **Browser snapshot.** `--headless browser` renders the real window offscreen,
@@ -426,7 +452,30 @@ features are listed too, so the gap is explicit rather than implied.
   loaded ranges; filters combine with script, kind, italic and bold.
 - **Collections.** Create, rename, delete; add or remove a family from the row
   context menu; sidebar selection filters by collection; member faces survive a
-  missing file.
+  missing file. Context menu activates or deactivates all stored faces.
+- **Nested folders.** The sidebar mirrors indexed directories with native
+  List/OutlineGroup rows, path-prefix selection, family counts, and watched
+  icons.
+- **Add Fonts.** Picker and Finder drop add individual files; files inside an
+  indexed folder join it, outside files get a parent-directory root.
+- **Folder exclusions.** Ignore This Folder and Settings → Ignored Folders share
+  one list: resolved paths, add/remove, warnings before an overlapping add,
+  deactivation, row deletion, and skipped full/delta scans. FontBase cache
+  suggestions come from a manager-agnostic detector protocol.
+- **Nested roots.** Deepest indexed root owns each file; adding a nested root
+  adopts rows, parent scans skip deeper subtrees, and removal re-parents rows to
+  the deepest remaining ancestor.
+- **Missing cleanup.** Remove Missing Entries in Warnings deletes stale rows
+  after confirmation, including their collection membership. No file on disk is
+  touched.
+- **Warnings.** Live duplicate PostScript names and missing files, grouped in
+  collapsible disclosure sections, with right-click copy and reveal/copy-path.
+- **Per-file availability.** Duplicate PostScript versions show per-file
+  checkboxes; one active version disables the others and names the owner path.
+  Missing and installed files are distinct states.
+- **No font fallback.** Previews draw primary runs normally and render fallback
+  runs as the primary font's `.notdef`; script samples are selected only when
+  the complete sample is covered.
 - **System font visibility.** Show system fonts defaults on; the Filters toggle
   hides families whose faces all live under `/System/Library/Fonts`.
 - **System name display.** Apple's leading dot is stripped for display when the
@@ -436,17 +485,19 @@ features are listed too, so the gap is explicit rather than implied.
 - **Preview presets.** Alphabet, AaBbCcDdEeFf, pangram and numbers; selectable
   without changing size.
 - **Preview layout.** List rows wrap to two or four lines with ink-based line
-  spacing; grid tiles stay single-line. Size slider lives in the status bar so
-  it keeps the accent tint.
-- **Missing glyphs.** Preset characters absent from a font map to .notdef.
-  Covered by a CoreText glyph test.
+  spacing and grow with the size slider; grid tiles stay single-line, honor the
+  size, and truncate. Size slider lives in the status bar (12-108 pt) so it keeps
+  the accent tint.
+- **Missing glyphs.** Preview rendering replaces CoreText fallback runs with the
+  primary font's `.notdef`. The CoreText glyph test covers missing-character
+  mapping; the headless render covers the drawn result.
 - **OpenType feature display.** GSUB/GPOS feature tags read per face and listed
   on the font page with readable names; stylistic sets and character variants
   numbered.
 - **Google Fonts provider.** Runtime catalog from the public metadata endpoint,
   TTF files from the official `google/fonts` repository, license copied, cache
   under Application Support, downloads indexed as a hidden managed folder.
-  Search, download and refresh sheet; CLI `google-catalog` and
+  Search, download and refresh in the Hosts view; CLI `google-catalog` and
   `google-download`.
 - **Contrast-aware separators.** List and grid separators use a neutral gray
   chosen from the preview background luminance, not the app appearance.

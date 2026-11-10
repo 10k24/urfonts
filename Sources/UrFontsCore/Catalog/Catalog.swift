@@ -26,6 +26,8 @@ public struct CatalogFace: Sendable, Identifiable, Equatable {
     public let vendorID: String?
     public let embedding: Int?
     public let scriptMask: UInt64
+    /// Scripts whose complete sample text is covered by this face.
+    public let previewMask: UInt64
 }
 
 public enum FontLocation {
@@ -76,12 +78,31 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     public let searchBlob: Data
     public let hasVariableFace: Bool
     public let scriptMask: UInt64
+    /// Scripts whose complete sample text is covered by the readable faces.
+    public let previewMask: UInt64
+    /// True when sibling files report the same PostScript name, so only one of
+    /// them can be active at a time.
+    public let hasDuplicatePostScriptNames: Bool
+    /// Faces whose file is missing or unreadable. They remain in the snapshot
+    /// so collections survive an offline volume.
+    public let missingFaceCount: Int
 
     public var faceCount: Int { faceRange.count }
 
+    /// Display label for the family count. Duplicate groups read as files;
+    /// ordinary families read as styles. Missing files are explicit.
+    public var countLabel: String {
+        let unit = hasDuplicatePostScriptNames ? "file" : "style"
+        var text = "\(faceCount) \(unit)\(faceCount == 1 ? "" : "s")"
+        if missingFaceCount > 0 {
+            text += " · \(missingFaceCount) missing"
+        }
+        return text
+    }
+
     /// Script-aware preview, falling back to the user's sample.
     public func previewText(userText: String) -> String {
-        FontScript.previewText(mask: scriptMask, userText: userText)
+        FontScript.previewText(mask: previewMask, userText: userText)
     }
 }
 
@@ -300,14 +321,23 @@ public struct CatalogSnapshot: Sendable {
             parts.append(searchFold(face.style))
             parts.append(searchFold(face.postscriptName))
         }
-        let scriptMask = faces[range].reduce(UInt64(0)) { $0 | $1.scriptMask }
+        let readable = faces[range].filter { $0.fileStatus == "ok" }
+        let scriptMask = readable.reduce(UInt64(0)) { $0 | $1.scriptMask }
+        let previewMask = readable.reduce(UInt64(0)) { $0 | $1.previewMask }
+        let postscriptNames = Set(readable.map { $0.postscriptName.lowercased() })
+        let missingCount = faces[range].reduce(0) {
+            $0 + ($1.fileStatus == "ok" ? 0 : 1)
+        }
         return CatalogFamily(
             id: faces[range.lowerBound].familyKey,
             name: name,
             faceRange: range,
             searchBlob: Data(parts.joined(separator: "\u{1}").utf8),
-            hasVariableFace: faces[range].contains(where: \.isVariable),
-            scriptMask: scriptMask
+            hasVariableFace: readable.contains(where: \.isVariable),
+            scriptMask: scriptMask,
+            previewMask: previewMask,
+            hasDuplicatePostScriptNames: postscriptNames.count < readable.count,
+            missingFaceCount: missingCount
         )
     }
 

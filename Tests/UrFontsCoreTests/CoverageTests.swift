@@ -77,6 +77,22 @@ struct CoverageTests {
         #expect(decoded == coverage)
     }
 
+    @Test("preview mask requires complete sample coverage")
+    func previewMask() {
+        let arabic = FontScript.arabic.sampleText.unicodeScalars.map(\.value)
+        let full = CoverageRanges(ranges: [
+            (arabic.min() ?? 0)...(arabic.max() ?? 0)
+        ])
+        #expect(FontScript.previewMask(for: full) & FontScript.arabic.rawValue != 0)
+
+        let partial = CoverageRanges(ranges: arabic.dropLast().map { $0...$0 })
+        #expect(FontScript.previewMask(for: partial) & FontScript.arabic.rawValue == 0)
+
+        let latin = FontScript.latin.sampleText.unicodeScalars.map(\.value)
+        let latinCoverage = CoverageRanges(ranges: latin.map { $0...$0 })
+        #expect(FontScript.previewMask(for: latinCoverage) & FontScript.latin.rawValue != 0)
+    }
+
     @Test("indexed ranges answer family character filters")
     func characterFilter() async throws {
         let root = try makeLibrary(count: 4)

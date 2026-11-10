@@ -70,6 +70,20 @@ public enum FontScript: UInt64, CaseIterable, Sendable {
     public static func previewText(mask: UInt64, userText: String) -> String {
         preferredSample(in: mask)?.sampleText ?? userText
     }
+
+    /// Scripts whose complete sample is covered by `ranges`. Partial script
+    /// coverage must not select a sample: CoreText would fill the gaps with a
+    /// fallback font.
+    public static func previewMask(for ranges: CoverageRanges) -> UInt64 {
+        var mask: UInt64 = 0
+        for script in allCases {
+            let scalars = script.sampleText.unicodeScalars.map(\.value)
+            if ranges.containsAll(scalars) {
+                mask |= script.rawValue
+            }
+        }
+        return mask
+    }
 }
 
 /// Codepoint ranges a face covers, sorted and merged.
@@ -155,6 +169,10 @@ public struct ScriptCoverage: Sendable, Equatable {
     public init(mask: UInt64, ranges: CoverageRanges) {
         self.mask = mask
         self.ranges = ranges
+    }
+
+    public var previewMask: UInt64 {
+        FontScript.previewMask(for: ranges)
     }
 }
 
@@ -252,10 +270,6 @@ public enum CmapCoverage {
             mask: mask,
             ranges: CoverageRanges(ranges: codepointRanges)
         )
-    }
-
-    static func scriptMask(_ table: FontTable) throws -> UInt64 {
-        try coverage(table).mask
     }
 
     private static func format4Ranges(

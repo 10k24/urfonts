@@ -46,9 +46,15 @@ public actor LibraryScanner {
         // Foundation's URL helpers do not normalize that firmlink; realpath does.
         let folderPath = canonicalPath(url.path)
         let folderID = try database.upsertFolder(path: folderPath, kind: kind)
+        let roots = try database.folders()
+        let skip = try skipPrefixes(for: folderPath, roots: roots)
+        try adoptFromAncestors(folderID: folderID, path: folderPath, roots: roots)
         let existing = try database.existingFiles(folderID: folderID)
 
-        guard let candidates = enumerate(folder: URL(fileURLWithPath: folderPath)) else {
+        guard let candidates = enumerate(
+            folder: URL(fileURLWithPath: folderPath),
+            ignoring: skip
+        ) else {
             throw ScanError.unreadableFolder
         }
 
@@ -119,6 +125,9 @@ public actor LibraryScanner {
         let started = Date()
         let folderPath = canonicalPath(url.path)
         let folderID = try database.upsertFolder(path: folderPath, kind: kind)
+        let roots = try database.folders()
+        let skip = try skipPrefixes(for: folderPath, roots: roots)
+        try adoptFromAncestors(folderID: folderID, path: folderPath, roots: roots)
         let existing = try database.existingFiles(folderID: folderID)
         let manager = FileManager.default
 
@@ -131,6 +140,9 @@ public actor LibraryScanner {
 
         for rawPath in Set(paths) {
             let path = canonicalPath(rawPath)
+            guard !skip.contains(where: { LibraryPath.isInside(path, root: $0) }) else {
+                continue
+            }
             let fileURL = URL(fileURLWithPath: path)
             guard fontExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
             seen += 1
@@ -185,22 +197,9 @@ public actor LibraryScanner {
 
     // MARK: - Internals
 
-    /// `realpath` resolves the `/var` firmlink, which Foundation treats as
-    /// already standardized. Without this, stored paths and FSEvents paths
-    /// disagree and every delta looks like a new file.
+    /// Kept as a private seam so scanner call sites stay short.
     private func canonicalPath(_ path: String) -> String {
-        if let resolved = realpath(path, nil) {
-            defer { free(resolved) }
-            return String(cString: resolved)
-        }
-        // Deleted file: resolve the parent, keep the leaf.
-        let parent = (path as NSString).deletingLastPathComponent
-        let leaf = (path as NSString).lastPathComponent
-        if !parent.isEmpty, parent != "/", let resolved = realpath(parent, nil) {
-            defer { free(resolved) }
-            return String(cString: resolved) + "/" + leaf
-        }
-        return path
+        LibraryPath.canonical(path)
     }
 
     private func resourceKeys() -> Set<URLResourceKey> {
@@ -228,9 +227,13 @@ public actor LibraryScanner {
         )
     }
 
-    private func enumerate(folder: URL) -> [(url: URL, stamp: FileStamp)]? {
+    private func enumerate(
+        folder: URL,
+        ignoring ignored: [String]
+    ) -> [(url: URL, stamp: FileStamp)]? {
         let keys: [URLResourceKey] = [
             .isRegularFileKey,
+            .isDirectoryKey,
             .fileSizeKey,
             .contentModificationDateKey,
             .fileResourceIdentifierKey,
@@ -246,11 +249,59 @@ public actor LibraryScanner {
 
         var result: [(url: URL, stamp: FileStamp)] = []
         while let item = enumerator.nextObject() as? URL {
+            let path = item.path
+            if ignored.contains(where: { LibraryPath.isInside(path, root: $0) }) {
+                // Skip the whole subtree; an ignored folder can hold many files.
+                let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?
+                    .isDirectory ?? false
+                if isDirectory {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
             guard fontExtensions.contains(item.pathExtension.lowercased()) else { continue }
             guard let stamp = stamp(for: item) else { continue }
             result.append((item, stamp))
         }
         return result
+    }
+
+    /// Ignored subtrees plus subtrees owned by a deeper indexed root. A parent
+    /// scan must not touch files that belong to a nested root.
+    private func skipPrefixes(
+        for folderPath: String,
+        roots: [LibraryFolder]
+    ) throws -> [String] {
+        let deeper = roots
+            .map(\.path)
+            .filter { $0 != folderPath && LibraryPath.isInside($0, root: folderPath) }
+        return Array(Set(try ignoredPrefixes()).union(deeper))
+    }
+
+    /// The deepest root owns each file. When a nested root starts scanning it
+    /// takes over rows from every ancestor instead of failing on the unique
+    /// file path.
+    private func adoptFromAncestors(
+        folderID: String,
+        path folderPath: String,
+        roots: [LibraryFolder]
+    ) throws {
+        let prefix = folderPath.hasSuffix("/") ? folderPath : folderPath + "/"
+        for root in roots
+        where root.id != folderID && LibraryPath.isInside(folderPath, root: root.path) {
+            try database.adoptFiles(
+                fromFolderID: root.id,
+                toFolderID: folderID,
+                pathPrefix: prefix
+            )
+        }
+    }
+
+    /// Canonical ignored prefixes with no trailing slash.
+    private func ignoredPrefixes() throws -> [String] {
+        try database.ignoredPaths().map {
+            $0.hasSuffix("/") ? String($0.dropLast()) : $0
+        }
     }
 
     private func parse(candidates: [(url: URL, stamp: FileStamp)]) async -> [ScannedFile] {

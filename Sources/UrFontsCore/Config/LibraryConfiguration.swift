@@ -12,6 +12,9 @@ public struct LibraryConfiguration: Codable, Sendable, Equatable {
     public var collections: [Collection]
     public var samples: [Sample]
     public var preview: Preview
+    /// Canonical directories kept out of the index. Optional so settings files
+    /// written before exclusions existed still decode.
+    public var ignoredPaths: [String]?
 
     public struct Folder: Codable, Sendable, Equatable {
         public var path: String
@@ -93,7 +96,8 @@ public struct LibraryConfiguration: Codable, Sendable, Equatable {
         folders: [Folder],
         collections: [Collection],
         samples: [Sample],
-        preview: Preview
+        preview: Preview,
+        ignoredPaths: [String]? = nil
     ) {
         self.version = version
         self.exportedAt = exportedAt
@@ -101,5 +105,6 @@ public struct LibraryConfiguration: Codable, Sendable, Equatable {
         self.collections = collections
         self.samples = samples
         self.preview = preview
+        self.ignoredPaths = ignoredPaths
     }
 }

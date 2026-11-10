@@ -11,7 +11,7 @@ func expand(_ paths: [String]) -> [URL] {
     var urls: [URL] = []
     let fontExtensions: Set<String> = ["ttf", "otf", "ttc", "otc", "dfont"]
     for path in paths {
-        let url = URL(fileURLWithPath: path)
+        let url = URL(fileURLWithPath: LibraryPath.resolve(path))
         var isDirectory: ObjCBool = false
         guard manager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             FileHandle.standardError.write(Data("missing: \(path)\n".utf8))
@@ -47,14 +47,14 @@ func argumentValue(_ name: String, in arguments: inout [String]) -> String? {
 
 func databaseURL(_ arguments: inout [String]) throws -> URL {
     if let path = argumentValue("--db", in: &arguments) {
-        return URL(fileURLWithPath: path)
+        return URL(fileURLWithPath: LibraryPath.resolve(path))
     }
     return try LibraryLocation.defaultDatabaseURL()
 }
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
-    print("usage: urfonts-cli <index|search|stats|inspect|activate|deactivate|scope> [options] <path>...")
+    print("usage: urfonts-cli <index|search|stats|inspect|activate|deactivate|scope|folders|watch-folder|unwatch-folder> [options] <path>...")
     exit(1)
 }
 arguments.removeFirst()
@@ -70,7 +70,7 @@ case "index":
     let scanner = LibraryScanner(database: database)
     for path in arguments {
         let report = try await scanner.scan(
-            folder: URL(fileURLWithPath: path),
+            folder: URL(fileURLWithPath: LibraryPath.resolve(path)),
             kind: kind,
             force: force
         )
@@ -167,19 +167,36 @@ case "folders":
     }
     exit(0)
 
+case "watch-folder", "unwatch-folder":
+    let url = try databaseURL(&arguments)
+    guard let path = arguments.first else {
+        fail("\(command) needs a folder path")
+    }
+    let standardized = LibraryPath.resolve(path)
+    let database = try LibraryDatabase(url: url)
+    guard let id = try database.folderID(path: standardized) else {
+        fail("not in library: \(standardized)")
+    }
+    try database.setKind(
+        folderID: id,
+        kind: command == "watch-folder" ? .watched : .staticFolder
+    )
+    print("\(command) \(standardized)")
+    exit(0)
+
 case "split-folder":
     let url = try databaseURL(&arguments)
     guard let oldPath = arguments.first, arguments.count > 1 else {
         fail("usage: split-folder <old-folder> <child-folder>...")
     }
     arguments.removeFirst()
-    let standardizedOld = URL(fileURLWithPath: oldPath).standardizedFileURL.path
+    let standardizedOld = LibraryPath.resolve(oldPath)
     let database = try LibraryDatabase(url: url)
     guard let oldID = try database.folderID(path: standardizedOld) else {
         fail("not in library: \(standardizedOld)")
     }
     for child in arguments {
-        let standardizedChild = URL(fileURLWithPath: child).standardizedFileURL.path
+        let standardizedChild = LibraryPath.resolve(child)
         guard standardizedChild.hasPrefix(standardizedOld + "/") else {
             fail("not inside \(standardizedOld): \(standardizedChild)")
         }
@@ -198,10 +215,27 @@ case "split-folder":
 case "remove-folder":
     let url = try databaseURL(&arguments)
     guard let path = arguments.first else { fail("remove-folder needs a path") }
-    let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+    let standardized = LibraryPath.resolve(path)
     let database = try LibraryDatabase(url: url)
     guard let id = try database.folderID(path: standardized) else {
         fail("not in library: \(standardized)")
+    }
+    // Same rule as the app: never drop journal rows for a font that is still
+    // registered, or nothing is left to turn it off later.
+    let targets = try database.activationRecords()
+        .filter { LibraryPath.isInside($0.path, root: standardized) }
+        .map {
+            ActivationTarget(
+                faceID: $0.faceID,
+                path: $0.path,
+                postscriptName: $0.postscriptName
+            )
+        }
+    if !targets.isEmpty {
+        let outcome = await ActivationEngine(database: database).deactivate(targets)
+        guard outcome.failures.isEmpty else {
+            fail("could not deactivate: \(outcome.summary)")
+        }
     }
     try database.removeFolder(id: id)
     print("removed \(standardized)")

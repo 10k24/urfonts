@@ -4,11 +4,12 @@ import UrFontsCore
 
 /// Library health: duplicate PostScript names and files that are missing or no
 /// longer readable. Warning types stay collapsed so the page reads as a summary;
-/// expand one to inspect its files. Nothing here changes the library.
+/// expand one to inspect its files. Only explicit cleanup changes the library.
 struct ProblemsView: View {
     @Bindable var model: AppModel
     @State private var duplicatesExpanded = false
     @State private var missingExpanded = false
+    @State private var confirmRemoveMissing = false
 
     var body: some View {
         Group {
@@ -43,16 +44,32 @@ struct ProblemsView: View {
                                 systemImage: "doc.on.doc",
                                 count: model.duplicates.count
                             )
+                            .contextMenu {
+                                Button("Copy All Duplicate Warnings") {
+                                    copy(
+                                        model.duplicates
+                                            .map(duplicateMessage)
+                                            .joined(separator: "\n\n")
+                                    )
+                                }
+                            }
                         }
                     }
 
                     if !model.problemFiles.isEmpty {
                         DisclosureGroup(isExpanded: $missingExpanded) {
                             Text("These files were moved, deleted, or cannot be read. "
-                                + "Their entries stay until the next scan removes them.")
+                                + "Their entries stay until you remove them.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 4)
+
+                            Button("Remove \(model.problemFiles.count) Missing "
+                                + "\(model.problemFiles.count == 1 ? "Entry" : "Entries")…",
+                                role: .destructive) {
+                                confirmRemoveMissing = true
+                            }
+                            .padding(.vertical, 2)
 
                             ForEach(model.problemFiles) { file in
                                 problemRow(file)
@@ -64,11 +81,37 @@ struct ProblemsView: View {
                                 systemImage: "questionmark.folder",
                                 count: model.problemFiles.count
                             )
+                            .contextMenu {
+                                Button("Copy All Missing Warnings") {
+                                    copy(
+                                        model.problemFiles
+                                            .map(problemMessage)
+                                            .joined(separator: "\n\n")
+                                    )
+                                }
+                                Button("Remove Missing Entries…", role: .destructive) {
+                                    confirmRemoveMissing = true
+                                }
+                            }
                         }
                     }
                 }
                 .listStyle(.inset)
             }
+        }
+        .confirmationDialog(
+            "Remove \(model.problemFiles.count) missing "
+                + "\(model.problemFiles.count == 1 ? "entry" : "entries")?",
+            isPresented: $confirmRemoveMissing,
+            titleVisibility: .visible
+        ) {
+            Button("Remove Missing Entries", role: .destructive) {
+                Task { await model.removeMissingFiles() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removed fonts also leave their collections. No files on disk "
+                + "are touched. A later scan adds the font back if the file returns.")
         }
     }
 
@@ -108,6 +151,7 @@ struct ProblemsView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .contextMenu {
+                        Button("Copy Warning") { copy(duplicateMessage(duplicate)) }
                         Button("Reveal in Finder") { model.revealPath(path) }
                         copyPathButton(path)
                     }
@@ -115,6 +159,9 @@ struct ProblemsView: View {
         }
         .padding(.vertical, 3)
         .padding(.leading, 28)
+        .contextMenu {
+            Button("Copy Warning") { copy(duplicateMessage(duplicate)) }
+        }
     }
 
     private func problemRow(_ file: ProblemFile) -> some View {
@@ -132,9 +179,26 @@ struct ProblemsView: View {
         .padding(.vertical, 2)
         .padding(.leading, 28)
         .contextMenu {
+            Button("Copy Warning") { copy(problemMessage(file)) }
             Button("Reveal in Finder") { model.revealPath(file.path) }
             copyPathButton(file.path)
         }
+    }
+
+    private func duplicateMessage(_ duplicate: DuplicatePostScriptName) -> String {
+        (["Duplicate PostScript name: \(duplicate.name)"] + duplicate.paths)
+            .joined(separator: "\n")
+    }
+
+    private func problemMessage(_ file: ProblemFile) -> String {
+        let label = file.familyName ?? (file.path as NSString).lastPathComponent
+        let status = file.status == "missing" ? "Missing" : "Unreadable"
+        return "\(status): \(label)\n\(file.path)"
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func copyPathButton(_ path: String) -> some View {

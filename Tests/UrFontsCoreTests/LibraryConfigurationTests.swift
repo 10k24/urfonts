@@ -32,7 +32,8 @@ struct LibraryConfigurationTests {
                 backgroundColor: "#101010FF",
                 showSystemFonts: true,
                 fallbackFileNames: true
-            )
+            ),
+            ignoredPaths: ["/Users/x/Fonts/Cache"]
         )
 
         let encoder = JSONEncoder()
@@ -48,5 +49,15 @@ struct LibraryConfigurationTests {
         #expect(decoded == configuration)
         #expect(decoded.collections[0].fonts == ["Inter-Regular", "Inter-Bold"])
         #expect(decoded.folders[0].label == "Client A")
+        #expect(decoded.ignoredPaths == ["/Users/x/Fonts/Cache"])
+
+        // Settings files written before exclusions existed have no key.
+        var legacy = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        legacy.removeValue(forKey: "ignoredPaths")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+        let old = try JSONDecoder().decode(LibraryConfiguration.self, from: legacyData)
+        #expect(old.ignoredPaths == nil)
     }
 }

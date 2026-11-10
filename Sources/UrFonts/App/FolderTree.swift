@@ -10,4 +10,5 @@ struct FolderNode: Identifiable, Hashable {
     let children: [FolderNode]?
     let folderID: String?
     let isWatched: Bool
+    let isIgnored: Bool
 }
