@@ -25,20 +25,20 @@ struct GoogleFontsView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView("Loading catalog…")
+                ProgressView(Messages.Google.loadingCatalog)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let errorText {
                 ContentUnavailableView {
-                    Label("Could not load Google Fonts", systemImage: "globe")
+                    Label(Messages.Google.couldNotLoad, systemImage: "globe")
                 } description: {
                     Text(errorText)
                 } actions: {
-                    Button("Retry") { model.googleRefreshRequest &+= 1 }
+                    Button(Messages.Google.retry) { model.googleRefreshRequest &+= 1 }
                 }
             } else if filtered.isEmpty {
                 if model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     ContentUnavailableView {
-                        Label("No Google Fonts", systemImage: "globe")
+                        Label(Messages.Google.noFonts, systemImage: "globe")
                     }
                 } else {
                     ContentUnavailableView.search(text: model.query)

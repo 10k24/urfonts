@@ -256,6 +256,9 @@ These are the facts the design rests on. Verify before changing any of them.
   footer carries the latest action message and the preview size, not counts.
   Scope counts use paths and collection membership, never the sum of a family's
   faces, because a family can span folders.
+- New user-facing UI copy goes through `Messages` in the app target. Keys are
+  dotted feature names; defaults live beside the key so localization can be added
+  without touching views.
 - A saved sample is a snapshot of preview text, size and colors. Selecting one
   applies it; Update overwrites the selected sample; Save as Sample always
   creates a new one. Dirty state compares the current settings to the selected
@@ -494,7 +497,7 @@ scripts/                     build-icons.sh, build-app.sh, release, make-dmg,
                              test, bench (release scripts planned)
 design/icon/                 Icon Composer source plus legacy 1024 PNG
 tools/                       fixture generator
-docs/                        planned: ARCHITECTURE.md, ADOBE.md
+docs/                        planned: ARCHITECTURE.md, CONTRIBUTING.md
 ```
 
 Rules:

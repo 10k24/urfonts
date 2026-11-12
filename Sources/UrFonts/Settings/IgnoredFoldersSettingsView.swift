@@ -11,10 +11,9 @@ struct IgnoredFoldersSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Ignored Folders")
+                Text(Messages.Settings.ignoredFolders)
                     .font(.title3.weight(.semibold))
-                Text("Add folders here to omit them from your library, including re-scans. "
-                    + "The files stay on disk.")
+                Text(Messages.Settings.ignoredFoldersHelp)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -22,13 +21,13 @@ struct IgnoredFoldersSettingsView: View {
                 ignoredList
 
                 HStack {
-                    Button("Add Folder…") { chooseFolders() }
+                    Button(Messages.Settings.addFolder) { chooseFolders() }
                     Spacer()
                 }
 
                 if !visibleSuggestions.isEmpty {
                     Divider()
-                    Text("Detected Font Managers")
+                    Text(Messages.Settings.detectedManagers)
                         .font(.headline)
                     ForEach(visibleSuggestions) { suggestion in
                         suggestionRow(suggestion)
@@ -55,7 +54,7 @@ struct IgnoredFoldersSettingsView: View {
     private var ignoredList: some View {
         VStack(alignment: .leading, spacing: 0) {
             if model.ignoredPaths.isEmpty {
-                Text("No ignored folders.")
+                Text(Messages.Settings.noIgnoredFolders)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 10)
             }
@@ -114,7 +113,7 @@ struct IgnoredFoldersSettingsView: View {
                     .textSelection(.enabled)
             }
             Spacer()
-            Button("Add to Ignore List") {
+            Button(Messages.Settings.addToIgnoreList) {
                 Task { await addIgnored(suggestion.path) }
             }
         }
@@ -131,18 +130,16 @@ struct IgnoredFoldersSettingsView: View {
     }
 
     private func chooseFolders() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.prompt = "Ignore"
-        panel.message = "Choose folders to omit from the library. Files stay on disk."
-        panel.begin { response in
-            guard response == .OK else { return }
-            let paths = panel.urls.map(\.path)
+        FilePicker.shared.open(
+            title: "Ignore Folders",
+            message: "Choose folders to omit from the library. Files stay on disk.",
+            prompt: "Ignore",
+            directories: true,
+            multiple: true
+        ) { urls in
             Task { @MainActor in
-                for path in paths {
-                    await addIgnored(path)
+                for url in urls {
+                    await addIgnored(url.path)
                 }
             }
         }

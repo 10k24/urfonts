@@ -26,8 +26,8 @@ struct HostActivationControl: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Download and activate")
-            .accessibilityLabel("Download and activate")
+            .help(Messages.Activation.downloadAndActivate)
+            .accessibilityLabel(Messages.Activation.downloadAndActivate)
         case .downloading(let progress):
             HostDownloadProgress(progress: progress)
         case .family(let state):
@@ -42,8 +42,8 @@ struct HostActivationControl: View {
                     width: PreviewMetrics.activationHitSize,
                     height: PreviewMetrics.activationHitSize
                 )
-                .help("No downloadable files")
-                .accessibilityLabel("No downloadable files")
+                .help(Messages.Activation.noDownloadableFiles)
+                .accessibilityLabel(Messages.Activation.noDownloadableFiles)
         }
     }
 }
@@ -88,6 +88,6 @@ struct HostDownloadProgress: View {
             height: PreviewMetrics.activationHitSize
         )
         .onAppear { sweep = true }
-        .accessibilityLabel("Downloading")
+        .accessibilityLabel(Messages.Activation.downloading)
     }
 }

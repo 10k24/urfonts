@@ -43,42 +43,42 @@ struct ActivationDot: View {
             ActivationGlyph(
                 symbol: "checkmark.square.fill",
                 tint: nil,
-                help: "Installed system font",
+                help: Messages.Activation.installed,
                 action: nil
             )
         case .missing:
             ActivationGlyph(
                 symbol: "questionmark.square",
                 tint: nil,
-                help: "File missing",
+                help: Messages.Activation.fileMissing,
                 action: nil
             )
         case .blocked(let ownerPath):
             ActivationGlyph(
                 symbol: "square",
                 tint: nil,
-                help: "PostScript name already active from \(ownerPath)",
+                help: Messages.Activation.blocked(ownerPath: ownerPath),
                 action: nil
             )
         case .none:
             ActivationGlyph(
                 symbol: "square",
                 tint: .secondary,
-                help: "Activate",
+                help: Messages.Activation.activate,
                 action: action
             )
         case .partial:
             ActivationGlyph(
                 symbol: "minus.square.fill",
                 tint: .accentColor,
-                help: "Partially active, click to activate all",
+                help: Messages.Activation.partial,
                 action: action
             )
         case .all:
             ActivationGlyph(
                 symbol: "checkmark.square.fill",
                 tint: .accentColor,
-                help: "Deactivate",
+                help: Messages.Activation.deactivate,
                 action: action
             )
         }
@@ -97,35 +97,35 @@ struct FaceActivationControl: View {
             ActivationGlyph(
                 symbol: "square",
                 tint: .secondary,
-                help: "Activate",
+                help: Messages.Activation.activate,
                 action: action
             )
         case .active:
             ActivationGlyph(
                 symbol: "checkmark.square.fill",
                 tint: .accentColor,
-                help: "Deactivate",
+                help: Messages.Activation.deactivate,
                 action: action
             )
         case .installed:
             ActivationGlyph(
                 symbol: "checkmark.square.fill",
                 tint: nil,
-                help: "Installed system font",
+                help: Messages.Activation.installed,
                 action: nil
             )
         case .missing:
             ActivationGlyph(
                 symbol: "questionmark.square",
                 tint: nil,
-                help: "File missing",
+                help: Messages.Activation.fileMissing,
                 action: nil
             )
         case .blocked(let ownerPath):
             ActivationGlyph(
                 symbol: "square",
                 tint: nil,
-                help: "PostScript name already active from \(ownerPath)",
+                help: Messages.Activation.blocked(ownerPath: ownerPath),
                 action: nil
             )
         }

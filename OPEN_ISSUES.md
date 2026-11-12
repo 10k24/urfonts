@@ -36,8 +36,6 @@ Locked decisions:
 
 ### Phase 0 - Spikes
 
-- **CI harness.** Run `swift test`, the fixture generator and the headless
-  scenarios on a macOS runner. Gate: green with no focus change.
 - **Competitor benchmark.** Compare Cicero against Ur Fonts on the same machine
   and two libraries: the large fixture library and the real folders.
   Measure cold launch to first row, scroll p50/p99 and worst hitch, RSS after
@@ -58,9 +56,8 @@ Locked decisions:
 
 ### Phase 3 - Activation
 
-- **Activation UI.** Temporary activation from the UI, an "activate more than N
-  families" warning, and a global deactivate-all. Collection bulk activation is
-  implemented.
+- **Activation UI.** Temporary activation from the UI and an "activate more than
+  N families" warning. Collection bulk activation is implemented.
 - **Activation failure feedback.** Duplicate conflicts show the owner path
   inline. Add reveal-in-Finder for a failed file and a one-click retry.
 - **Style activation from the page.** Per-file checkboxes are implemented;
@@ -144,7 +141,7 @@ under 16 ms at full scale.
 - **Release.** Sign, notarize, staple, DMG, appcast.
 - **Homebrew cask.**
 - **Help and docs.** README exists; add in-app help, first run, activation
-  semantics, Adobe expectation and known limits before launch.
+  semantics and known limits before launch.
 - **Donation option.** Add a Buy Me a Coffee (or equivalent) link to the README,
   the About panel, and the first release notes.
 - **Manual-use gate.** Launch only after several weeks of the author using it as
@@ -157,12 +154,10 @@ a font.
 
 - **Bench gate in CI.** Index, search and scroll budgets fail the build when
   exceeded.
-- **Accessibility.** Canvas rows expose label, value and actions so VoiceOver
-  never forces per-row materialization.
+- **Database recovery.** A failed migration or corrupt database must show a
+  readable recovery path, not a blank app. Keep a backup before migrations.
 - **Attribution.** `NOTICE` records MIT-derived Cicero code and bundled data
   licenses.
-- **`docs/ADOBE.md`.** Why there is no integration, what users should expect
-  after activating a font, and the restart rule.
 - **App icon.** Manual design tasks:
   - Replace the “UR FONTS” wordmark with an abstract UR mark. HIG says avoid
     text in app icons: it is not localizable and breaks down at Dock sizes.
@@ -179,6 +174,23 @@ a font.
   - Run `./scripts/build-icons.sh` and `./scripts/build-app.sh`, then inspect
     `macos/Assets.car`, `macos/UrFonts.icns` and `Info.plist`.
 - **No telemetry.** Network access only for updates and Google Fonts downloads.
+
+### Open Source Gate
+
+- **CI harness.** Run `swift test`, the fixture generator, the headless scenarios
+  and a Release build on a macOS runner. Gate: green with no focus change.
+- **Bench gate.** Index, search and scroll budgets from `AGENTS.md` fail the
+  build when exceeded.
+- **Performance run.** Measure warm launch, scroll p50/p99, search, activation
+  and RSS in Release on the real library. Record method and raw numbers.
+- **Public docs.** ARCHITECTURE and CONTRIBUTING with build, test and headless
+  commands. No Adobe-specific doc.
+- **Release docs.** CHANGELOG, versioning, issue/PR templates and a support
+  policy for macOS 15+.
+- **Repo hygiene.** No trial libraries, font files, generated build artifacts or
+  signing secrets in git. Confirm Apache-2.0 and NOTICE.
+- **Release automation.** Reproducible DMG, signing/notarization workflow and
+  Sparkle appcast.
 
 ### FontBase parity verification
 
@@ -260,17 +272,18 @@ features are listed too, so the gap is explicit rather than implied.
 
 **Missing for parity (not verification)**
 
-- Deactivate-all.
 - OpenType feature filtering.
 - GlyphsApp language parity.
 
 **Release**
 
-- Icon appearance review, notarization, Sparkle, Homebrew cask, README/help,
-  donation, Apache/NOTICE.
+- Notarization, Sparkle, Homebrew cask, README/help, donation, Apache/NOTICE.
 
 ### Backlog (lowest priority)
 
+- **Accessibility audit.** Canvas rows could expose labels, values and
+  activation actions to VoiceOver without materializing every row. Deferred;
+  not an MVP gate.
 - **Favorites.** Red heart toggle on individual fonts and families, plus a
   Favorites section in the sidebar with a count. Store face IDs; a family
   favorite covers all of its faces. Survives reindexing and settings export.
@@ -401,8 +414,8 @@ features are listed too, so the gap is explicit rather than implied.
   unique family, style and PostScript names; CoreText and the checksum test read
   them back.
 - **Headless harness.** `--headless focus-check` proves the process never
-  activates while creating and backing a window; `--headless render` writes a
-  PNG. Artifacts land in `$TMPDIR/urfonts-headless/`.
+  activates while creating and backing a window; `render`, `browser`, `scroll`,
+  `detail`, `settings` and `google-detail` cover the real views offscreen.
 - **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
   by `--headless list-spike`; the real browser re-measures in Phase 2.
 - **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`
@@ -415,8 +428,8 @@ features are listed too, so the gap is explicit rather than implied.
 - **Catalog and CLI.** Immutable family/face snapshot with in-memory search;
   `urfonts-cli index`, `search`, `stats`; fixture library indexes and rescans
   inside the budget.
-- **Browser shell.** Sidebar with All Fonts and per-folder rows, Add Folder panel,
-  rescan, toolbar search and list/grid toggle.
+- **Browser shell.** Sidebar with All Fonts, Active, Hosts, folders, warnings,
+  collections, toolbar search, list/grid toggle and filters.
 - **Rows and previews.** Uniform family rows whose height grows with the sample
   size, fixed-height grid tiles, one `CTLine` per row in `Canvas`, `FontLoader`
   LRU with process-local CTFonts, variable-font badge.
@@ -432,8 +445,8 @@ features are listed too, so the gap is explicit rather than implied.
   no-results state no longer lifts the footer or leaves a gap.
 - **Preview sizing.** One CTFont per face; size changes derive with
   `CTFontCreateCopyWithAttributes`, so the slider cannot blank or reload previews.
-- **Grid fitting.** Tiles shrink the sample to fit width and height instead of
-  clipping it; list rows still truncate.
+- **Grid fitting.** Tiles honor the sample size, shrink only for tile height and
+  truncate with ASCII periods; list rows wrap and truncate.
 - **Folder management.** Remove Folder with confirmation, `urfonts-cli folders`
   and `remove-folder`, and `split-folder` to adopt existing rows into subfolders
   without re-reading fonts.
@@ -443,8 +456,9 @@ features are listed too, so the gap is explicit rather than implied.
   measured with `CTFontManagerGetScopeForURL`; every confirmed face journaled.
 - **Activation safety.** System Fonts folders are skipped and locked, duplicate
   PostScript names are refused, and re-parse preserves the journal.
-- **Activation UI.** Trailing dot on rows and tiles with none, partial, all and
-  installed states; click activates or deactivates the whole family.
+- **Activation UI.** Trailing activation square on rows and tiles with none,
+  partial, all and installed states; click activates or deactivates the whole
+  family.
 - **Watcher.** FSEvents reports `(root, path)` pairs; one-second debounce;
   directory events rescan the folder, file events scan only those files. Five
   minute sweep covers missed events.

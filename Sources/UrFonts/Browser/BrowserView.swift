@@ -595,12 +595,11 @@ struct PreviewSettingsView: View {
 
 @MainActor
 func exportSettings(using model: AppModel) {
-    let panel = NSSavePanel()
-    panel.nameFieldStringValue = LibraryConfiguration.fileName
-    panel.allowedContentTypes = [.json]
-    panel.canCreateDirectories = true
-    panel.begin { response in
-        guard response == .OK, let url = panel.url else { return }
+    FilePicker.shared.save(
+        title: "Export Settings",
+        name: LibraryConfiguration.fileName,
+        types: [.json]
+    ) { url in
         do {
             try model.exportSettings(to: url)
         } catch {
@@ -611,12 +610,15 @@ func exportSettings(using model: AppModel) {
 
 @MainActor
 func importSettings(using model: AppModel) {
-    let panel = NSOpenPanel()
-    panel.allowedContentTypes = [.json]
-    panel.allowsMultipleSelection = false
-    panel.canChooseDirectories = false
-    panel.begin { response in
-        guard response == .OK, let url = panel.url else { return }
+    FilePicker.shared.open(
+        title: "Import Settings",
+        message: "Choose an Ur Fonts settings JSON file.",
+        prompt: "Import",
+        directories: false,
+        multiple: false,
+        types: [.json]
+    ) { urls in
+        guard let url = urls.first else { return }
         Task { @MainActor in
             do {
                 try await model.importSettings(from: url)

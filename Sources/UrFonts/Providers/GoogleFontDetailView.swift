@@ -54,7 +54,7 @@ struct GoogleFontDetailView: View {
                 .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Done") { dismiss() }
+            Button(Messages.Google.done) { dismiss() }
                 .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 24)
@@ -80,7 +80,7 @@ struct GoogleFontDetailView: View {
                     size: 66
                 )
             } else {
-                Text("No preview")
+                Text(Messages.Google.noPreview)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -96,7 +96,7 @@ struct GoogleFontDetailView: View {
 
     private var styles: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Styles")
+            Text(Messages.Google.styles)
                 .font(.headline)
             if family.styles.isEmpty {
                 Text("This family has no downloadable styles.")
@@ -153,7 +153,7 @@ struct GoogleFontDetailView: View {
 
     private func licenseRow(_ url: URL) -> some View {
         HStack(spacing: 8) {
-            Text(StandardLicense.detect(url: url)?.rawValue ?? "Read License")
+            Text(StandardLicense.detect(url: url)?.rawValue ?? Messages.Google.readLicense)
                 .font(.caption2.weight(.semibold))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)

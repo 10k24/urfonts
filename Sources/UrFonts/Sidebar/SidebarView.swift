@@ -18,48 +18,47 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: $model.selection) {
-            Section("Library") {
+            Section(Messages.Sidebar.library) {
                 row(
-                    title: "All Fonts",
+                    title: Messages.Sidebar.allFonts,
                     systemImage: "textformat",
                     count: model.snapshot.faceCount
                 )
                 .tag(SidebarSelection.all)
                 .help(
-                    "\(model.snapshot.familyCount.formatted()) families · "
-                        + "\(model.snapshot.faceCount.formatted()) fonts"
+                    Messages.Sidebar.allFontsHelp(
+                        families: model.snapshot.familyCount,
+                        fonts: model.snapshot.faceCount
+                    )
                 )
 
                 row(
-                    title: "Active",
+                    title: Messages.Sidebar.active,
                     systemImage: "circle.fill",
                     count: model.activeFaceIDs.count
                 )
                 .tag(SidebarSelection.active)
-                .help(
-                    "\(model.activeFaceIDs.count.formatted()) "
-                        + (model.activeFaceIDs.count == 1 ? "active font" : "active fonts")
-                )
+                .help(Messages.Sidebar.activeHelp(model.activeFaceIDs.count))
 
                 row(
-                    title: "Warnings",
+                    title: Messages.Sidebar.warnings,
                     systemImage: "exclamationmark.triangle",
                     count: model.problemCount
                 )
                 .tag(SidebarSelection.problems)
-                .help("Duplicate PostScript names and missing files")
+                .help(Messages.Sidebar.warningsHelp)
             }
 
-            Section("Hosts") {
+            Section(Messages.Sidebar.hosts) {
                 HStack {
-                    sidebarLabel("Google Fonts", systemImage: "globe")
+                    sidebarLabel(Messages.Sidebar.googleFonts, systemImage: "globe")
                     Spacer()
                 }
                 .tag(SidebarSelection.googleFonts)
-                .help("Browse and download Google Fonts")
+                .help(Messages.Sidebar.googleFontsHelp)
             }
 
-            Section("Folders") {
+            Section(Messages.Sidebar.folders) {
                 OutlineGroup(model.folderTreeRoots, children: \.children) { node in
                     folderNodeRow(node)
                         .tag(selectionTag(for: node))
@@ -68,7 +67,7 @@ struct SidebarView: View {
                 }
             }
 
-            Section("Collections") {
+            Section(Messages.Sidebar.collections) {
                 ForEach(model.collections) { collection in
                     row(
                         title: collection.name,
@@ -448,22 +447,18 @@ struct SidebarView: View {
 
 @MainActor
 func chooseFontFiles(using model: AppModel) {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = true
-    panel.canChooseDirectories = false
-    panel.allowsMultipleSelection = true
-    panel.prompt = "Add Fonts"
-    panel.message = "Choose font files to add. Files are read, never moved."
-
     var types: [UTType] = [.font]
     if let dfont = UTType(filenameExtension: "dfont") {
         types.append(dfont)
     }
-    panel.allowedContentTypes = types
-
-    panel.begin { response in
-        guard response == .OK else { return }
-        let urls = panel.urls
+    FilePicker.shared.open(
+        title: "Add Fonts",
+        message: "Choose font files to add. Files are read, never moved.",
+        prompt: "Add Fonts",
+        directories: false,
+        multiple: true,
+        types: types
+    ) { urls in
         Task { @MainActor in
             await model.addFontFiles(urls)
         }
@@ -472,18 +467,15 @@ func chooseFontFiles(using model: AppModel) {
 
 @MainActor
 func chooseFolder(using model: AppModel, watched: Bool) {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = true
-    panel.prompt = watched ? "Add and Watch" : "Add"
-    panel.message = watched
-        ? "Choose a folder to scan now and keep in sync. Files are read, never moved."
-        : "Choose a folder to scan once. Files are read, never moved."
-
-    panel.begin { response in
-        guard response == .OK else { return }
-        let urls = panel.urls
+    FilePicker.shared.open(
+        title: watched ? "Add and Watch" : "Add Folder",
+        message: watched
+            ? "Choose a folder to scan now and keep in sync. Files are read, never moved."
+            : "Choose a folder to scan once. Files are read, never moved.",
+        prompt: watched ? "Add and Watch" : "Add",
+        directories: true,
+        multiple: true
+    ) { urls in
         let kind: FolderKind = watched ? .watched : .staticFolder
         Task { @MainActor in
             model.requestAddFolders(

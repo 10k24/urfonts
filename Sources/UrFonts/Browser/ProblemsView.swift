@@ -18,9 +18,9 @@ struct ProblemsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.problemCount == 0 {
                 ContentUnavailableView {
-                    Label("No warnings", systemImage: "checkmark.seal")
+                    Label(Messages.Problems.noWarnings, systemImage: "checkmark.seal")
                 } description: {
-                    Text("No duplicate PostScript names and no missing files.")
+                    Text(Messages.Problems.noWarningsDetail)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -39,7 +39,7 @@ struct ProblemsView: View {
                             }
                         } label: {
                             warningLabel(
-                                title: "Duplicate PostScript names",
+                                title: Messages.Problems.duplicates,
                                 detail: "More than one file claims the same name",
                                 systemImage: "doc.on.doc",
                                 count: model.duplicates.count
@@ -76,7 +76,7 @@ struct ProblemsView: View {
                             }
                         } label: {
                             warningLabel(
-                                title: "Missing or unreadable files",
+                                title: Messages.Problems.missing,
                                 detail: "Files no longer available on disk",
                                 systemImage: "questionmark.folder",
                                 count: model.problemFiles.count
