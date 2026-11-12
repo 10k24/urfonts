@@ -545,10 +545,19 @@ public final class LibraryDatabase: Sendable {
         try queue.write { db in
             for file in parsed {
                 let path = file.url.path
-                let fileID = existing[path]?.id ?? UUID().uuidString
+                let local = existing[path]
+                let global: Row? = local == nil
+                    ? try Row.fetchOne(
+                        db,
+                        sql: "SELECT id, folder_id FROM file WHERE path = ?",
+                        arguments: [path]
+                    )
+                    : nil
+                let globalID: String? = global?["id"]
+                let fileID = local?.id ?? globalID ?? UUID().uuidString
                 var priorActivations: [Row] = []
 
-                if existing[path] != nil {
+                if local != nil || global != nil {
                     // Face IDs are stable, so activation rows can and must
                     // survive a re-parse. Deleting faces cascades them away.
                     priorActivations = try Row.fetchAll(db, sql: """
@@ -559,12 +568,13 @@ public final class LibraryDatabase: Sendable {
                     try db.execute(sql: "DELETE FROM face WHERE file_id = ?", arguments: [fileID])
                     try db.execute(
                         sql: """
-                            UPDATE file SET inode = ?, size = ?, mtime_ns = ?,
+                            UPDATE file SET folder_id = ?, inode = ?, size = ?, mtime_ns = ?,
                                 parse_version = ?, face_count = ?, status = 'ok',
                                 last_seen = ?
                             WHERE id = ?
                             """,
                         arguments: [
+                            folderID,
                             file.stamp.inode,
                             file.stamp.size,
                             file.stamp.modifiedNs,

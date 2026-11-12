@@ -1,8 +1,8 @@
 import SwiftUI
 import UrFontsCore
 
-/// Host family sheet. Same activation controls and file previews as the library
-/// family sheet; the only extra state is downloading.
+/// Host family sheet. Lists every style; each preview is fetched independently.
+/// Variable families map several styles to one owned TTF.
 struct GoogleFontDetailView: View {
     @Bindable var model: AppModel
     let family: GoogleFontFamily
@@ -22,12 +22,9 @@ struct GoogleFontDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     detailPreview
-                    files
-                    if let licenseURL = licenseURL {
-                        Text("License: \(licenseURL.path)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                    styles
+                    if let url = licenseURL {
+                        licenseRow(url)
                     }
                 }
                 .padding(24)
@@ -50,7 +47,7 @@ struct GoogleFontDetailView: View {
                 Text(family.name)
                     .font(.title2.weight(.semibold))
                 Text(
-                    "\(family.category) · \(family.variants.count) variants"
+                    "\(family.styles.count) styles · \(family.category)"
                         + (family.isVariable ? " · variable" : "")
                 )
                 .font(.callout)
@@ -74,8 +71,16 @@ struct GoogleFontDetailView: View {
                     textColor: model.textColor,
                     size: 66
                 )
+            } else if let style = family.styles.first {
+                GoogleStylePreview(
+                    model: model,
+                    family: family,
+                    style: style,
+                    file: family.file(for: style),
+                    size: 66
+                )
             } else {
-                Text("Download a font to preview")
+                Text("No preview")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -89,19 +94,19 @@ struct GoogleFontDetailView: View {
         )
     }
 
-    private var files: some View {
+    private var styles: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Files")
+            Text("Styles")
                 .font(.headline)
-            if family.files.isEmpty {
-                Text("This family has no downloadable files.")
+            if family.styles.isEmpty {
+                Text("This family has no downloadable styles.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             VStack(spacing: 0) {
-                ForEach(family.files, id: \.path) { file in
-                    fileRow(file)
-                    if file.path != family.files.last?.path {
+                ForEach(family.styles) { style in
+                    styleRow(style)
+                    if style.id != family.styles.last?.id {
                         Divider()
                     }
                 }
@@ -109,38 +114,57 @@ struct GoogleFontDetailView: View {
         }
     }
 
-    private func fileRow(_ file: GoogleFontFile) -> some View {
-        HStack(spacing: 14) {
-            HostActivationControl(
-                phase: fileControlPhase(file),
-                action: { toggle(file) }
-            )
+    private func styleRow(_ style: GoogleFontStyle) -> some View {
+        let file = family.file(for: style)
+        return HStack(alignment: .bottom, spacing: 14) {
+            if let file {
+                HostActivationControl(
+                    phase: fileControlPhase(file),
+                    action: { toggle(file) }
+                )
+            }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(styleLabel(for: file))
-                Text(file.filename)
+                Text(style.name)
+                Text(file?.filename ?? "No file")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
-            .frame(width: 190, alignment: .leading)
+            .frame(width: 200, alignment: .leading)
 
-            if let face = model.googleFace(family: family, file: file) {
-                FontFilePreview(
-                    face: face,
-                    text: model.sampleText(for: face),
-                    textColor: model.textColor
-                )
-            } else {
-                Text("Not downloaded")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            GoogleStylePreview(
+                model: model,
+                family: family,
+                style: style,
+                file: file
+            )
+            .frame(height: 44)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
+        .help(
+            family.isVariable && file != nil
+                ? "Variable file: activating a style activates every style in this file"
+                : ""
+        )
+    }
+
+    private func licenseRow(_ url: URL) -> some View {
+        HStack(spacing: 8) {
+            Text(StandardLicense.detect(url: url)?.rawValue ?? "Read License")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
+            Text(url.path)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
     }
 
     private var licenseURL: URL? {
@@ -149,24 +173,6 @@ struct GoogleFontDetailView: View {
             .appendingPathComponent(GoogleFontFamily.folderName(for: family), isDirectory: true)
             .appendingPathComponent("LICENSE.txt")
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
-    }
-
-    private func styleLabel(for file: GoogleFontFile) -> String {
-        let base = (file.filename as NSString).deletingPathExtension
-        var label = base.replacingOccurrences(
-            of: "\\[[^\\]]*\\]",
-            with: "",
-            options: .regularExpression
-        )
-        let folder = GoogleFontFamily.folderName(for: family)
-        if label.lowercased().hasPrefix(folder.lowercased()) {
-            label = String(label.dropFirst(folder.count))
-        }
-        label = label.trimmingCharacters(in: CharacterSet(charactersIn: "-_ "))
-        if label.isEmpty {
-            return family.isVariable ? "Variable" : "Regular"
-        }
-        return label
     }
 
     private func fileControlPhase(_ file: GoogleFontFile) -> HostControlPhase {
@@ -193,10 +199,60 @@ struct GoogleFontDetailView: View {
                     }
                 }
             } catch {
-                model.errorMessage = error.localizedDescription
+                model.report(error, context: "Google style activation")
             }
             downloading.remove(file.filename)
             progress.removeValue(forKey: file.filename)
         }
+    }
+}
+
+/// One style preview, downloaded as a tiny CSS subset. Falls back to the
+/// downloaded file when the network is unavailable.
+private struct GoogleStylePreview: View {
+    @Bindable var model: AppModel
+    let family: GoogleFontFamily
+    let style: GoogleFontStyle
+    let file: GoogleFontFile?
+    var size: CGFloat = 30
+
+    @State private var previewURL: URL?
+
+    var body: some View {
+        Group {
+            if let previewURL {
+                FontFilePreview(
+                    path: previewURL.path,
+                    text: model.sampleText,
+                    textColor: model.textColor,
+                    size: size
+                )
+            } else if let face = file.flatMap({
+                model.googleFace(family: family, file: $0)
+            }) {
+                FontFilePreview(
+                    face: face,
+                    text: model.sampleText(for: face),
+                    textColor: model.textColor,
+                    size: size
+                )
+            } else {
+                Text(style.name)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .task(id: previewKey) {
+            previewURL = await model.googlePreviewURL(
+                family: family,
+                text: model.sampleText,
+                style: style
+            )
+        }
+    }
+
+    private var previewKey: String {
+        "\(family.name)\u{0}\(style.id)\u{0}\(model.sampleText)"
     }
 }

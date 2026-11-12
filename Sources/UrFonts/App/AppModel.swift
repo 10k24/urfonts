@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import OSLog
 import SwiftUI
 import UrFontsCore
 
@@ -126,6 +127,27 @@ final class AppModel {
     var errorMessage: String?
     var pendingFolderAdd: PendingFolderAdd?
     var googleRefreshRequest = 0
+
+    private static let log = Logger(
+        subsystem: "com.10k24.urfonts",
+        category: "library"
+    )
+
+    /// Raw errors go to the log. The UI gets only safe, mapped text.
+    func report(_ error: Error, context: String = "library") {
+        errorMessage = userMessage(for: error, context: context)
+    }
+
+    func userMessage(for error: Error, context: String = "library") -> String {
+        Self.log.error(
+            "\(context, privacy: .public): \(String(describing: error), privacy: .public)"
+        )
+        if let settings = error as? SettingsError,
+           let text = settings.errorDescription {
+            return text
+        }
+        return LibraryErrorText.message(for: error)
+    }
     var activeFaceIDs: Set<String> = []
     var activePostScriptOwners: [String: String] = [:]
     var duplicateCount = 0
@@ -173,6 +195,7 @@ final class AppModel {
     private static let fallbackNamesKey = "urfonts.fallbackFileNames"
 
     @ObservationIgnored private var database: LibraryDatabase?
+    @ObservationIgnored private var scanner: LibraryScanner?
     @ObservationIgnored private var activationEngine: ActivationEngine?
     @ObservationIgnored private var coverageIndexer: CoverageIndexer?
     @ObservationIgnored private var coverageRangesByFace: [String: CoverageRanges]?
@@ -294,6 +317,7 @@ final class AppModel {
         do {
             let database = try LibraryDatabase(url: databaseURL)
             self.database = database
+            scanner = LibraryScanner(database: database)
             activationEngine = ActivationEngine(database: database)
             coverageIndexer = CoverageIndexer(database: database)
 
@@ -329,7 +353,7 @@ final class AppModel {
                 Task { await rescanAll() }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
             isLoading = false
         }
     }
@@ -363,7 +387,7 @@ final class AppModel {
                 await loadProblems()
             }
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -416,7 +440,7 @@ final class AppModel {
             }
             await reload()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
         refreshCoverage()
         isIndexingCoverage = false
@@ -589,7 +613,7 @@ final class AppModel {
             refreshCollections()
             return id
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
             return nil
         }
     }
@@ -600,7 +624,7 @@ final class AppModel {
             try database.renameCollection(id: collection.id, name: name)
             refreshCollections()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -613,7 +637,7 @@ final class AppModel {
             }
             refreshCollections()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -628,7 +652,7 @@ final class AppModel {
             }
             refreshCollection(collectionID)
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -704,20 +728,20 @@ final class AppModel {
     /// Indexes downloads made outside the app (for example by the CLI) and
     /// keeps the managed folder in the library across launches.
     func syncGoogleFonts() async {
-        guard let database,
+        guard let scanner,
               let root = try? googleFontsRoot(),
               let contents = try? FileManager.default.contentsOfDirectory(atPath: root.path),
               !contents.isEmpty else {
             return
         }
         do {
-            _ = try await LibraryScanner(database: database).scan(
+            _ = try await scanner.scan(
                 folder: root,
                 kind: .managed
             )
             await reload()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -807,13 +831,15 @@ final class AppModel {
 
     func googlePreviewURL(
         family: GoogleFontFamily,
-        text: String
+        text: String,
+        style: GoogleFontStyle? = nil
     ) async -> URL? {
         // The subset must include the truncation periods; otherwise a clipped
         // grid tile shows three .notdef boxes.
         await GoogleFontPreviewService.shared.previewURL(
             familyName: family.name,
-            text: text + " ."
+            text: text + " .",
+            style: style
         )
     }
 
@@ -891,9 +917,9 @@ final class AppModel {
     }
 
     private func scanGoogleFiles(_ urls: [URL]) async throws {
-        guard let database else { return }
+        guard let scanner else { return }
         let root = try googleFontsRoot()
-        let report = try await LibraryScanner(database: database).scan(
+        let report = try await scanner.scan(
             changes: urls.map(\.path),
             folder: root,
             kind: .managed
@@ -1157,7 +1183,7 @@ final class AppModel {
             samples = try database.samples()
             selectedSampleID = id
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1168,7 +1194,7 @@ final class AppModel {
             samples = try database.samples()
             selectedSampleID = nil
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1418,19 +1444,18 @@ final class AppModel {
     /// `requestAddFolders`; this is the low-level path used by scans, seeding,
     /// settings import and confirmed adds.
     func addFolder(_ url: URL, kind: FolderKind = .staticFolder) async {
-        guard let database else { return }
+        guard let database, let scanner else { return }
         let resolved = URL(fileURLWithPath: LibraryPath.resolve(url.path))
         status = "Scanning \(resolved.lastPathComponent)…"
         do {
-            let report = try await LibraryScanner(database: database)
-                .scan(folder: resolved, kind: kind)
+            let report = try await scanner.scan(folder: resolved, kind: kind)
             status = report.summary
             await reload()
             folders = try database.folders()
             setupWatching()
             await reconcileActivation()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1528,7 +1553,7 @@ final class AppModel {
     /// that folder; other files join a one-time folder for their directory, so
     /// the sidebar still has a path to show and reveal.
     func addFontFiles(_ urls: [URL]) async {
-        guard let database, !urls.isEmpty else { return }
+        guard let database, let scanner, !urls.isEmpty else { return }
         let extensions: Set<String> = ["ttf", "otf", "ttc", "otc", "dfont"]
         let files = urls.filter {
             extensions.contains($0.pathExtension.lowercased())
@@ -1555,7 +1580,6 @@ final class AppModel {
 
         status = "Adding \(files.count) \(files.count == 1 ? "font" : "fonts")…"
         do {
-            let scanner = LibraryScanner(database: database)
             var addedFaces = 0
             for (directory, directoryFiles) in grouped {
                 let covering = folders
@@ -1574,7 +1598,7 @@ final class AppModel {
             folders = try database.folders()
             setupWatching()
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1611,7 +1635,7 @@ final class AppModel {
             folders = try database.folders()
             status = "Renamed to \(name)"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1641,7 +1665,7 @@ final class AppModel {
             folders = try database.folders()
             status = "Moved \(moved.name)"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1675,7 +1699,7 @@ final class AppModel {
             setupWatching()
             status = "Stopped watching \(folder.displayPath)"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1737,7 +1761,7 @@ final class AppModel {
             setupWatching()
             status = "Removed \(folder.displayPath)"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1781,7 +1805,7 @@ final class AppModel {
             setupWatching()
             status = "Ignoring \((canonical as NSString).lastPathComponent)"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1807,7 +1831,7 @@ final class AppModel {
             setupWatching()
             status = "Indexing \((canonical as NSString).lastPathComponent) again"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1846,7 +1870,7 @@ final class AppModel {
                 ? "No missing entries to remove"
                 : "Removed \(removed) missing \(removed == 1 ? "entry" : "entries")"
         } catch {
-            errorMessage = error.localizedDescription
+            report(error)
         }
     }
 
@@ -1893,7 +1917,7 @@ final class AppModel {
     }
 
     private func applyChanges(_ changes: [String: Set<String>]) async {
-        guard let database else { return }
+        guard let scanner else { return }
         var reloadNeeded = false
         let manager = FileManager.default
 
@@ -1921,20 +1945,21 @@ final class AppModel {
             do {
                 let report: ScanReport
                 if needsFullScan {
-                    report = try await LibraryScanner(database: database)
-                        .scan(folder: URL(fileURLWithPath: root), kind: folder.kind)
+                    report = try await scanner.scan(
+                        folder: URL(fileURLWithPath: root),
+                        kind: folder.kind
+                    )
                 } else {
-                    report = try await LibraryScanner(database: database)
-                        .scan(
-                            changes: Array(paths),
-                            folder: URL(fileURLWithPath: root),
-                            kind: folder.kind
-                        )
+                    report = try await scanner.scan(
+                        changes: Array(paths),
+                        folder: URL(fileURLWithPath: root),
+                        kind: folder.kind
+                    )
                 }
                 status = report.summary
                 reloadNeeded = true
             } catch {
-                errorMessage = error.localizedDescription
+                report(error)
             }
         }
         if reloadNeeded {
@@ -1944,18 +1969,20 @@ final class AppModel {
     }
 
     private func scan(rootPaths: [String]) async {
-        guard let database else { return }
+        guard let scanner else { return }
         var changed = false
         for path in rootPaths {
             guard let folder = folders.first(where: { $0.path == path }) else { continue }
             guard !isIgnored(path) else { continue }
             do {
-                let report = try await LibraryScanner(database: database)
-                    .scan(folder: URL(fileURLWithPath: path), kind: folder.kind)
+                let report = try await scanner.scan(
+                    folder: URL(fileURLWithPath: path),
+                    kind: folder.kind
+                )
                 status = report.summary
                 changed = true
             } catch {
-                errorMessage = error.localizedDescription
+                report(error)
             }
         }
         if changed {
@@ -1978,16 +2005,18 @@ final class AppModel {
     }
 
     func rescanAll() async {
-        guard let database else { return }
+        guard let database, let scanner else { return }
         for folder in folders {
             guard !isIgnored(folder.path) else { continue }
             status = "Scanning \(folder.name)…"
             do {
-                let report = try await LibraryScanner(database: database)
-                    .scan(folder: URL(fileURLWithPath: folder.path), kind: folder.kind)
+                let report = try await scanner.scan(
+                    folder: URL(fileURLWithPath: folder.path),
+                    kind: folder.kind
+                )
                 status = report.summary
             } catch {
-                errorMessage = error.localizedDescription
+                report(error)
             }
         }
         await reload()

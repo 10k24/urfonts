@@ -277,7 +277,8 @@ These are the facts the design rests on. Verify before changing any of them.
 - The sidebar folder tree is built from indexed paths, not a directory walk.
   Roots are added folders; children exist only where a file lives. Selection is
   a path prefix, so a collapsed root and an expanded child stay consistent.
-  Hosts precede Folders in the sidebar. Ignored subtrees are kept as rows with an
+  Hosts precede Folders in the sidebar. Library rows are All Fonts, Active,
+  Warnings. Ignored subtrees are kept as rows with an
   `eye.slash` icon so an exclusion is visible and reversible.
 - Nested roots are allowed. The deepest indexed root owns each file: scanning a
   nested root adopts rows from every ancestor, and scanning a parent skips
@@ -341,10 +342,13 @@ These are the facts the design rests on. Verify before changing any of them.
   `script_mask` remains the any-coverage filter; missing faces contribute to
   neither mask. This prevents CoreText fallback from selecting an Arabic sample
   the font only partly covers.
-- Cloud file providers are not ordinary folders. Scanning an online-only
-  Dropbox root stalled indefinitely because reading a placeholder blocks on the
-  provider. Detect dataless files before opening them, skip and report them, and
-  never scan a provider root by default.
+- Cloud file providers are not ordinary folders. An online-only Dropbox root
+  stalled indefinitely because reading a placeholder blocks on the provider.
+  Before opening a font, check File Provider dataless metadata and iCloud
+  download status. Skip placeholders with a `skippedCloud` scan count; never
+  mark them missing. Warnings should say "Not downloaded from cloud," not offer
+  deletion. A materialized file is indexed by the next event or sweep. Keep
+  provider roots opt-in and never scan a provider root by default.
 - Paths must be resolved before they are compared. Foundation does not resolve
   the `/var` firmlink (`resolvingSymlinksInPath` leaves it), but FileManager and
   FSEvents return `/private/var/...`. User boundaries (folder add, ignore list,
@@ -357,6 +361,16 @@ These are the facts the design rests on. Verify before changing any of them.
   delta scan of those paths only; a directory event triggers a folder scan. A
   five-minute sweep covers missed events. There is no event replay across app
   launches: the launch rescan is the recovery path.
+- AppModel owns exactly one `LibraryScanner` actor. Watcher deltas, sweeps,
+  rescans, folder adds, font adds and Google indexing all go through it. Never
+  create a scanner per call: two actors can read the same pre-insert state and
+  race on `file.path`.
+- `LibraryDatabase.apply` falls back to a global path lookup before inserting.
+  A file already owned by another folder is moved and its activation rows are
+  preserved, so an overlapping scan cannot raise a unique-constraint error.
+- Raw errors never reach the UI. `AppModel.report` logs the real error and
+  `LibraryErrorText` maps it to safe text; alerts and footers must never contain
+  SQL, table names, bindings or `localizedDescription` from the database.
 - Folder labels live in `folder.display_name`. Renaming is a label change and
   must never touch the directory on disk.
 - Turning watching on is a full rescan and is confirmed by the user first.
@@ -377,9 +391,8 @@ These are the facts the design rests on. Verify before changing any of them.
   a `.managed` folder that never appears in the sidebar. Licenses are saved next
   to the fonts.
 - The catalog is the Hosts → Google Fonts sidebar selection, rendered inline.
-  There is no toolbar globe or catalog sheet; a family sheet lists the individual
-  files. Downloaded families join the same library and Active scopes as local
-  fonts.
+  There is no toolbar globe or catalog sheet; a family sheet lists every style.
+  Downloaded families join the same library and Active scopes as local fonts.
 - Hosts use the global toolbar search and view picker, never a local field or
   header. The query persists across sidebar changes but is evaluated against the
   current context: the Google catalog in Hosts, the library snapshot everywhere
@@ -392,14 +405,18 @@ These are the facts the design rests on. Verify before changing any of them.
   the truncation period so clipped tiles do not show `.notdef`. Downloaded
   families use their real managed face instead.
 - Host rows use the library activation controls, never a download-only button.
-  An open square downloads and activates; a checked square deactivates. Files are
-  requested per family or per file. `HostControlPhase` and
-  `HostActivationControl` are provider-neutral so future hosts reuse the same
-  rows, progress ring and state machine.
-- The family sheet lists each remote file with the same `FaceActivationControl`
-  and `FontFilePreview` as library files. A single file downloads, indexes and
-  activates independently. Catalog faces are found by exact managed path, not
-  family name, so local duplicates are never toggled by mistake.
+  An open square downloads and activates; a checked square deactivates. Styles
+  are requested individually; variable styles share their owning file's state.
+  `HostControlPhase` and `HostActivationControl` are provider-neutral so future
+  hosts reuse the same rows, progress ring and state machine.
+- The family sheet lists every Google style with the same
+  `FaceActivationControl` and `FontFilePreview` as library files. Variable
+  families map several weights to one Roman/Italic file, so those rows share
+  activation state and say so in the tooltip. Previews are per-style CSS subsets
+  fetched with the configured sample text. A style downloads, indexes and
+  activates its owning file. Catalog faces are found by exact managed path, not
+  family name, so local duplicates are never toggled by mistake. License labels
+  come from `StandardLicense.detect`; the path is always shown next to the label.
 - Download progress is a circular ring with a down arrow. The service writes
   each TTF atomically, skips an existing license, and reports `(done, total)`.
 - Settings export excludes managed folders; Google downloads are re-fetchable,
@@ -455,7 +472,8 @@ Sources/UrFontsCore          no UI, every public type Sendable
   Catalog/                   GRDB store, migrations, snapshot, search index
   Activation/                engine, registrar protocol, journal, reconcile
   Coverage/                  batched cmap script index (manual)
-  GoogleFonts/               catalog, tree, downloads
+  GoogleFonts/               catalog, styles, GitHub downloads,
+                             CSS preview subsets
   FontManagers/              cache detectors (FontBase today)
   Preview/                   FontLoader LRU, CTLine and tile drawing
   Metrics/                   planned: contrast, classification

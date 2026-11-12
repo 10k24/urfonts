@@ -3,6 +3,11 @@ import Foundation
 public struct GoogleFontFile: Codable, Sendable, Equatable {
     public let path: String
     public let filename: String
+
+    public init(path: String, filename: String) {
+        self.path = path
+        self.filename = filename
+    }
 }
 
 public struct GoogleFontFamily: Codable, Sendable, Identifiable, Equatable {

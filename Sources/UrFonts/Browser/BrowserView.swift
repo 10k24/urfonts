@@ -604,7 +604,7 @@ func exportSettings(using model: AppModel) {
         do {
             try model.exportSettings(to: url)
         } catch {
-            model.errorMessage = error.localizedDescription
+            model.report(error, context: "settings export")
         }
     }
 }
@@ -621,7 +621,7 @@ func importSettings(using model: AppModel) {
             do {
                 try await model.importSettings(from: url)
             } catch {
-                model.errorMessage = error.localizedDescription
+                model.report(error, context: "settings import")
             }
         }
     }

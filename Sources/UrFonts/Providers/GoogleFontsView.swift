@@ -69,9 +69,10 @@ struct GoogleFontsView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(filtered) { family in
-                        GoogleFamilyListRow(
+                        GoogleFamilyItem(
                             model: model,
                             family: family,
+                            mode: .list,
                             control: controlPhase(for: family),
                             rowHeight: rowHeight,
                             onToggle: { toggle(family) },
@@ -92,10 +93,12 @@ struct GoogleFontsView: View {
                     spacing: 12
                 ) {
                     ForEach(filtered) { family in
-                        GoogleFamilyTile(
+                        GoogleFamilyItem(
                             model: model,
                             family: family,
+                            mode: .grid,
                             control: controlPhase(for: family),
+                            rowHeight: nil,
                             onToggle: { toggle(family) },
                             onOpen: { detail = family }
                         )
@@ -124,7 +127,7 @@ struct GoogleFontsView: View {
         do {
             families = try await model.googleFontCatalog(forceRefresh: forceRefresh)
         } catch {
-            errorText = error.localizedDescription
+            errorText = model.userMessage(for: error, context: "Google catalog")
         }
         isLoading = false
     }
@@ -144,7 +147,7 @@ struct GoogleFontsView: View {
                     }
                 }
             } catch {
-                model.errorMessage = error.localizedDescription
+                model.report(error, context: "Google family activation")
             }
             downloading.remove(folder)
             progress.removeValue(forKey: folder)
@@ -152,11 +155,14 @@ struct GoogleFontsView: View {
     }
 }
 
-private struct GoogleFamilyListRow: View {
+/// One Google family in either list or grid form. Preview fetching is shared so
+/// the two layouts cannot drift.
+private struct GoogleFamilyItem: View {
     @Bindable var model: AppModel
     let family: GoogleFontFamily
+    let mode: BrowserViewMode
     let control: HostControlPhase
-    let rowHeight: CGFloat
+    let rowHeight: CGFloat?
     let onToggle: () -> Void
     let onOpen: () -> Void
 
@@ -175,75 +181,36 @@ private struct GoogleFamilyListRow: View {
     }
 
     var body: some View {
-        FamilyRow(
-            display: FamilyDisplay(google: family),
-            preview: preview,
-            sampleText: model.sampleText,
-            sampleSize: model.sampleSize,
-            textColor: model.textColor,
-            backgroundColor: model.backgroundColor,
-            control: control,
-            onToggle: onToggle,
-            maxLines: model.previewMaxLines,
-            rowHeight: rowHeight
-        )
-        .equatable()
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onOpen)
-        .task(id: previewKey) {
-            await loadPreview()
+        Group {
+            switch mode {
+            case .list:
+                FamilyRow(
+                    display: FamilyDisplay(google: family),
+                    preview: preview,
+                    sampleText: model.sampleText,
+                    sampleSize: model.sampleSize,
+                    textColor: model.textColor,
+                    backgroundColor: model.backgroundColor,
+                    control: control,
+                    onToggle: onToggle,
+                    maxLines: model.previewMaxLines,
+                    rowHeight: rowHeight ?? 128
+                )
+                .equatable()
+            case .grid:
+                FamilyTile(
+                    display: FamilyDisplay(google: family),
+                    preview: preview,
+                    sampleText: model.sampleText,
+                    sampleSize: model.sampleSize,
+                    textColor: model.textColor,
+                    backgroundColor: model.backgroundColor,
+                    control: control,
+                    onToggle: onToggle
+                )
+                .equatable()
+            }
         }
-    }
-
-    private var previewKey: String {
-        "\(family.name)\u{0}\(model.sampleText)\u{0}\(downloadedFace?.id ?? "")"
-    }
-
-    private func loadPreview() async {
-        guard !family.files.isEmpty, downloadedFace == nil else {
-            previewURL = nil
-            return
-        }
-        previewURL = await model.googlePreviewURL(
-            family: family,
-            text: model.sampleText
-        )
-    }
-}
-
-private struct GoogleFamilyTile: View {
-    @Bindable var model: AppModel
-    let family: GoogleFontFamily
-    let control: HostControlPhase
-    let onToggle: () -> Void
-    let onOpen: () -> Void
-
-    @State private var previewURL: URL?
-
-    private var downloadedFace: CatalogFace? {
-        model.googleFamilyPreviewFace(family)
-    }
-
-    private var preview: PreviewSource? {
-        if let face = downloadedFace {
-            return PreviewSource(face: face)
-        }
-        guard let previewURL else { return nil }
-        return PreviewSource(path: previewURL.path)
-    }
-
-    var body: some View {
-        FamilyTile(
-            display: FamilyDisplay(google: family),
-            preview: preview,
-            sampleText: model.sampleText,
-            sampleSize: model.sampleSize,
-            textColor: model.textColor,
-            backgroundColor: model.backgroundColor,
-            control: control,
-            onToggle: onToggle
-        )
-        .equatable()
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .task(id: previewKey) {

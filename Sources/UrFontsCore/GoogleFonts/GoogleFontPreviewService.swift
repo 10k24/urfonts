@@ -25,10 +25,15 @@ public actor GoogleFontPreviewService {
 
     /// Preview URL for the configured sample text. Returns nil when the API
     /// cannot provide a TrueType subset.
-    public func previewURL(familyName: String, text: String) async -> URL? {
+    public func previewURL(
+        familyName: String,
+        text: String,
+        style: GoogleFontStyle? = nil
+    ) async -> URL? {
         let sample = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sample.isEmpty else { return nil }
-        let key = "\(familyName)\u{0}\(sample)"
+        let styleKey = style?.cssDescriptor ?? "family"
+        let key = "\(familyName)\u{0}\(styleKey)\u{0}\(sample)"
         let directory = cacheDirectory
         let file = directory.appendingPathComponent(
             "\(Self.sanitize(familyName))-\(Self.hash(key)).ttf"
@@ -49,6 +54,7 @@ public actor GoogleFontPreviewService {
         let task = Task { [cacheDirectory] () -> URL? in
             await Self.fetch(
                 familyName: familyName,
+                style: style,
                 text: sample,
                 directory: cacheDirectory,
                 file: file
@@ -85,6 +91,7 @@ public actor GoogleFontPreviewService {
 
     private nonisolated static func fetch(
         familyName: String,
+        style: GoogleFontStyle?,
         text: String,
         directory: URL,
         file: URL
@@ -94,8 +101,11 @@ public actor GoogleFontPreviewService {
         ) else {
             return nil
         }
+        let familyValue = style.map {
+            "\(familyName):\($0.cssDescriptor)"
+        } ?? familyName
         components.queryItems = [
-            URLQueryItem(name: "family", value: familyName),
+            URLQueryItem(name: "family", value: familyValue),
             URLQueryItem(name: "text", value: text),
         ]
         guard let cssURL = components.url else { return nil }

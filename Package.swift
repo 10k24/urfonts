@@ -43,7 +43,11 @@ let package = Package(
         ),
         .testTarget(
             name: "UrFontsCoreTests",
-            dependencies: ["UrFontsCore", "UrFontsFixtures"],
+            dependencies: [
+                "UrFontsCore",
+                "UrFontsFixtures",
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
             path: "Tests/UrFontsCoreTests"
         ),
     ]

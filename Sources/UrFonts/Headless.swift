@@ -494,7 +494,7 @@ enum Headless {
         window.orderBack(nil)
         window.displayIfNeeded()
 
-        let settle = Date().addingTimeInterval(1.5)
+        let settle = Date().addingTimeInterval(4)
         while Date() < settle {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }

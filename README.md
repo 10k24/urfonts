@@ -95,7 +95,7 @@ expensive part.
 - Google Fonts lives under Hosts in the sidebar and uses the same list/grid rows
   as the library, including inline previews from a lightweight subset before
   download. Click the activation square to download and activate a family; the
-  family sheet downloads and activates individual files.
+  family sheet lists every style with its own preview.
 - Headless test modes that never take focus.
 
 Not there yet: favorites, tags, Quick Look, document preflight, font-cache repair

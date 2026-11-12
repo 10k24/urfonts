@@ -20,17 +20,6 @@ struct SidebarView: View {
         List(selection: $model.selection) {
             Section("Library") {
                 row(
-                    title: "Active",
-                    systemImage: "circle.fill",
-                    count: model.activeFaceIDs.count
-                )
-                .tag(SidebarSelection.active)
-                .help(
-                    "\(model.activeFaceIDs.count.formatted()) "
-                        + (model.activeFaceIDs.count == 1 ? "active font" : "active fonts")
-                )
-
-                row(
                     title: "All Fonts",
                     systemImage: "textformat",
                     count: model.snapshot.faceCount
@@ -39,6 +28,17 @@ struct SidebarView: View {
                 .help(
                     "\(model.snapshot.familyCount.formatted()) families · "
                         + "\(model.snapshot.faceCount.formatted()) fonts"
+                )
+
+                row(
+                    title: "Active",
+                    systemImage: "circle.fill",
+                    count: model.activeFaceIDs.count
+                )
+                .tag(SidebarSelection.active)
+                .help(
+                    "\(model.activeFaceIDs.count.formatted()) "
+                        + (model.activeFaceIDs.count == 1 ? "active font" : "active fonts")
                 )
 
                 row(
@@ -52,7 +52,7 @@ struct SidebarView: View {
 
             Section("Hosts") {
                 HStack {
-                    Label("Google Fonts", systemImage: "globe")
+                    sidebarLabel("Google Fonts", systemImage: "globe")
                     Spacer()
                 }
                 .tag(SidebarSelection.googleFonts)
@@ -344,14 +344,12 @@ struct SidebarView: View {
 
     private func folderNodeRow(_ node: FolderNode) -> some View {
         HStack {
-            Label(
+            sidebarLabel(
                 node.name,
                 systemImage: node.isIgnored
                     ? "eye.slash"
                     : (node.folderID != nil && node.isWatched ? "magnifyingglass" : "folder")
             )
-            .lineLimit(1)
-            .truncationMode(.tail)
             Spacer()
             if !node.isIgnored {
                 Text("\(node.fontCount)")
@@ -407,14 +405,25 @@ struct SidebarView: View {
 
     private func row(title: String, systemImage: String, count: Int) -> some View {
         HStack {
-            Label(title, systemImage: systemImage)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            sidebarLabel(title, systemImage: systemImage)
             Spacer()
             Text("\(count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+        }
+    }
+
+    /// SF Symbols in sidebar rows are slightly smaller than the label default,
+    /// with a little more space between icon and text.
+    private func sidebarLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .regular))
+                .frame(width: 16, alignment: .center)
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
     }
 

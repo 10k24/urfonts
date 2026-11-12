@@ -388,6 +388,32 @@ struct LibraryTests {
         #expect(try database.faceIDs(inCollection: collectionID).count == 3)
     }
 
+    @Test("concurrent scans of one new file do not collide")
+    func concurrentDeltaScan() async throws {
+        let root = try makeLibrary(count: 0)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let spec = MinimalFontSpec(index: 0)
+        let url = root.appendingPathComponent("\(spec.postscriptName).ttf")
+        try MinimalFont.data(for: spec).write(to: url)
+
+        let database = try LibraryDatabase(inMemory: true)
+        async let first = LibraryScanner(database: database).scan(
+            changes: [url.path],
+            folder: root,
+            kind: .staticFolder
+        )
+        async let second = LibraryScanner(database: database).scan(
+            changes: [url.path],
+            folder: root,
+            kind: .staticFolder
+        )
+        _ = try await (first, second)
+
+        let counts = try database.counts()
+        #expect(counts.files == 1)
+        #expect(counts.faces == 1)
+    }
+
     @Test("canonical paths resolve the ~ and trailing slash")
     func resolvedPaths() {
         let home = LibraryPath.resolve("~")

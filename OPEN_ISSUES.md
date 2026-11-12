@@ -68,9 +68,20 @@ Locked decisions:
 
 ### Phase 4 - Watcher
 
-- **Cloud file providers.** Scanning an online-only Dropbox root stalled with no
-  output and no files committed. Detect dataless files before reading, skip them
-  with a report, and never let a scan hang on a provider.
+- **Cloud file providers.** An online-only Dropbox root stalled with no output
+  and no files committed. Plan:
+  - Check metadata before opening a file: File Provider dataless attribute and
+    iCloud download status. Verify the exact API against Apple docs before
+    coding.
+  - Skip placeholders with a `skippedCloud` count in `ScanReport`; never mark
+    them missing or damaged.
+  - Show them in Warnings as “Not downloaded from cloud,” not as a deletion
+    candidate.
+  - Once the provider materializes the file, the next event or sweep indexes it
+    normally.
+  - Keep provider roots opt-in and add a read timeout for non-placeholder files.
+  - Test with an injected placeholder predicate plus one real online-only cloud
+    folder; confirm no hang.
 - **Event replay.** Events while the app was closed rely on the launch rescan
   and the five-minute sweep. Persist and replay FSEvents IDs if a real folder
   proves this is not enough.
@@ -152,9 +163,21 @@ a font.
   licenses.
 - **`docs/ADOBE.md`.** Why there is no integration, what users should expect
   after activating a font, and the restart rule.
-- **App icon.** `design/icon/UrFonts.icon` compiles to `Assets.car` and
-  `design/icon/legacy/icon-1024.png` builds `UrFonts.icns`; review light, dark,
-  tinted and clear appearances in Icon Composer.
+- **App icon.** Manual design tasks:
+  - Replace the “UR FONTS” wordmark with an abstract UR mark. HIG says avoid
+    text in app icons: it is not localizable and breaks down at Dock sizes.
+  - Keep the mark inside the macOS 824 px icon body. The circle guide is not
+    the macOS mask; the system applies a rounded rectangle.
+  - In `design/icon/UrFonts.icon`, keep the background full-bleed and opaque.
+    Do not bake corners, borders or shadows into layers.
+  - Design explicit Default, Dark, Tinted and Mono appearances in Icon Composer;
+    do not rely on auto-generated variants.
+  - Keep the legacy `design/icon/legacy/icon-1024.png` as the Big Sur rounded
+    square with the standard 824 px body, 100 px margin and baked shadow.
+  - Check the mark at Dock sizes 16, 32, 64, 128 and 512 px on light and dark
+    desktops, including tinted and clear appearances.
+  - Run `./scripts/build-icons.sh` and `./scripts/build-app.sh`, then inspect
+    `macos/Assets.car`, `macos/UrFonts.icns` and `Info.plist`.
 - **No telemetry.** Network access only for updates and Google Fonts downloads.
 
 ### FontBase parity verification
@@ -342,11 +365,12 @@ features are listed too, so the gap is explicit rather than implied.
   upward. The slider stays accent blue while the window is active.
 - **Google Fonts.** Select Hosts → Google Fonts and confirm host rows and
   grid tiles match the library: inline preview from the configured sample before
-  download, shared search and view picker, progress ring, automatic activation
-  and family detail sheet. Download one file from detail and confirm only that
-  file activates; deactivate it and confirm the family shows partial. Quit and
-  relaunch to confirm the managed folder is still indexed. Check the first load
-  time and GitHub rate limit behavior.
+  download, shared search and view picker, progress ring, automatic activation.
+  Open the family sheet and confirm every style row has a preview; activate a
+  style in a static family independently. In a variable family confirm styles
+  sharing one file show the same activation state and explain it. Check the
+  license label against the path. Quit and relaunch to confirm the managed
+  folder is still indexed.
 - **Folder order.** Right-click Move Up/Move Down and relaunch: the order
   sticks. A newly added folder lands at the bottom. On a clean library the three
   macOS font folders are present, watched, and ordered first.
@@ -424,6 +448,10 @@ features are listed too, so the gap is explicit rather than implied.
 - **Watcher.** FSEvents reports `(root, path)` pairs; one-second debounce;
   directory events rescan the folder, file events scan only those files. Five
   minute sweep covers missed events.
+- **Scan serialization and safe errors.** One shared `LibraryScanner` actor
+  serializes watcher, sweep, rescan and import scans. `apply` reuses a globally
+  existing file row instead of inserting a duplicate. Raw database errors are
+  logged and replaced with safe UI text; no SQL reaches an alert.
 - **Watched folders in the UI.** Add Folder offers Watch or One-time Scan;
   sidebar eye icon and Watch/Stop Watching actions.
 - **Canonical paths.** Scanner and watcher agree on `realpath`; delta scans
@@ -502,8 +530,9 @@ features are listed too, so the gap is explicit rather than implied.
   under Application Support, downloads indexed as a hidden managed folder.
   Hosts use the library list/grid rows, shared search and view picker, inline
   subset previews from the configured sample, and library activation controls
-  with download progress. Family and single-file download+activation are
-  supported. CLI `google-catalog` and `google-download`.
+  with download progress. The family sheet lists every style with its own
+  preview; variable families map styles to their owning file. Standard license
+  bodies get a readable label. CLI `google-catalog` and `google-download`.
 - **Contrast-aware separators.** List and grid separators use a neutral gray
   chosen from the preview background luminance, not the app appearance.
 - **Color swap.** One button swaps preview text and background colors.
