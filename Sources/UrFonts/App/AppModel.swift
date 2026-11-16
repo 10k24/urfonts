@@ -10,6 +10,16 @@ enum BrowserViewMode: String, CaseIterable {
     case grid
 }
 
+/// Window appearance choice. `system` follows the macOS setting live; the
+/// explicit modes pin every window, panel and menu of the app.
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+}
+
 /// `nil` selection would make the All Fonts row unselectable: SwiftUI reads a
 /// nil tag as "no selection". A real enum gives every row an identity.
 enum SidebarSelection: Hashable {
@@ -28,11 +38,12 @@ enum FamilyActivation: Equatable {
     case all
     case installed
     case missing
+    case cloud
     case blocked(ownerPath: String)
 
     var canToggle: Bool {
         switch self {
-        case .installed, .missing, .blocked:
+        case .installed, .missing, .cloud, .blocked:
             return false
         case .none, .partial, .all:
             return true
@@ -47,6 +58,7 @@ enum FaceActivationState: Equatable {
     case active
     case installed
     case missing
+    case cloud
     case blocked(ownerPath: String)
 }
 
@@ -116,6 +128,39 @@ final class AppModel {
 
     private static let showSystemFontsKey = "urfonts.showSystemFonts"
 
+    var appearanceMode: AppearanceMode =
+        AppearanceMode(
+            rawValue: UserDefaults.standard
+                .string(forKey: AppModel.appearanceKey) ?? ""
+        ) ?? .system {
+        didSet {
+            UserDefaults.standard.set(
+                appearanceMode.rawValue,
+                forKey: AppModel.appearanceKey
+            )
+            applyAppearance()
+        }
+    }
+
+    private static let appearanceKey = "urfonts.appearance"
+
+    /// `NSApp.appearance` is the only writer: one value covers the main window,
+    /// the Settings window, sheets, open/save panels and menus. Per-window
+    /// `preferredColorScheme` would leave panels following the system.
+    func applyAppearance() {
+        // Headless renders construct the model before any NSApplication exists.
+        // `start()` applies the choice once the app is up.
+        guard NSApp != nil else { return }
+        switch appearanceMode {
+        case .system:
+            NSApp.appearance = nil
+        case .light:
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
     /// Headless runs must not rewrite the user's saved preference.
     func setShowSystemFonts(_ value: Bool, persist: Bool) {
         suppressSystemFontPersistence = !persist
@@ -148,15 +193,23 @@ final class AppModel {
         }
         return LibraryErrorText.message(for: error)
     }
+
+    private func present(_ report: ScanReport) {
+        status = report.summary
+        if report.cloudErrors > 0 {
+            errorMessage = CloudAccess.message
+        }
+    }
     var activeFaceIDs: Set<String> = []
     var activePostScriptOwners: [String: String] = [:]
     var duplicateCount = 0
     var missingFileCount = 0
+    var cloudFileCount = 0
     var duplicates: [DuplicatePostScriptName] = []
     var problemFiles: [ProblemFile] = []
     var isLoadingProblems = false
 
-    var problemCount: Int { duplicateCount + missingFileCount }
+    var problemCount: Int { duplicateCount + missingFileCount + cloudFileCount }
     var coverageIndexed = 0
     var coverageTotal = 0
     var isIndexingCoverage = false
@@ -303,11 +356,15 @@ final class AppModel {
         databaseURL = databasePath.map {
             URL(fileURLWithPath: LibraryPath.resolve($0))
         } ?? (try? LibraryLocation.defaultDatabaseURL())
+        // Apply before the first window is shown so a pinned Light/Dark choice
+        // does not flash the system appearance on launch.
+        applyAppearance()
     }
 
     // MARK: - Lifecycle
 
     func start() async {
+        applyAppearance()
         guard database == nil else { return }
         guard let databaseURL else {
             errorMessage = "No library database location."
@@ -398,6 +455,7 @@ final class AppModel {
         if let counts = try? database.problemCounts() {
             duplicateCount = counts.duplicates
             missingFileCount = counts.missing
+            cloudFileCount = counts.cloud
         }
     }
 
@@ -810,6 +868,8 @@ final class AppModel {
             return .installed
         case .missing:
             return .missing
+        case .cloud:
+            return .cloud
         case .blocked(let owner):
             return .blocked(ownerPath: owner)
         case .none, .partial:
@@ -845,7 +905,9 @@ final class AppModel {
 
     private func activationState(for faces: [CatalogFace]) -> FamilyActivation {
         let present = faces.filter { $0.fileStatus == "ok" }
-        guard !present.isEmpty else { return .missing }
+        guard !present.isEmpty else {
+            return faces.contains { $0.fileStatus == "cloud" } ? .cloud : .missing
+        }
         let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
         guard !activatable.isEmpty else { return .installed }
 
@@ -892,7 +954,7 @@ final class AppModel {
             targetsFaces = activatable.filter {
                 faceActivationState($0) == .available
             }
-        case .installed, .missing, .blocked:
+        case .installed, .missing, .cloud, .blocked:
             return
         }
         guard !targetsFaces.isEmpty else {
@@ -1288,7 +1350,9 @@ final class AppModel {
     func familyActivation(_ family: CatalogFamily) -> FamilyActivation {
         let faces = snapshot.faces(in: family)
         let present = faces.filter { $0.fileStatus == "ok" }
-        guard !present.isEmpty else { return .missing }
+        guard !present.isEmpty else {
+            return faces.contains { $0.fileStatus == "cloud" } ? .cloud : .missing
+        }
         let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
         guard !activatable.isEmpty else { return .installed }
 
@@ -1303,6 +1367,8 @@ final class AppModel {
                 return .installed
             case .missing:
                 return .missing
+            case .cloud:
+                return .cloud
             case .blocked(let owner):
                 return .blocked(ownerPath: owner)
             case .available:
@@ -1332,6 +1398,9 @@ final class AppModel {
     }
 
     func faceActivationState(_ face: CatalogFace) -> FaceActivationState {
+        if face.fileStatus == "cloud" {
+            return .cloud
+        }
         guard face.fileStatus == "ok" else { return .missing }
         if ActivationEngine.isInstalledPath(face.path) {
             return .installed
@@ -1354,6 +1423,9 @@ final class AppModel {
             return
         case .missing:
             status = "\((face.path as NSString).lastPathComponent) is missing"
+            return
+        case .cloud:
+            status = "\((face.path as NSString).lastPathComponent) is not downloaded from cloud"
             return
         case .blocked(let owner):
             status = "PostScript name is in use by \(owner)"
@@ -1416,7 +1488,7 @@ final class AppModel {
             targetsFaces = activatable.filter {
                 faceActivationState($0) == .available
             }
-        case .installed, .missing, .blocked:
+        case .installed, .missing, .cloud, .blocked:
             return
         }
         guard !targetsFaces.isEmpty else {
@@ -1449,7 +1521,7 @@ final class AppModel {
         status = "Scanning \(resolved.lastPathComponent)…"
         do {
             let report = try await scanner.scan(folder: resolved, kind: kind)
-            status = report.summary
+            present(report)
             await reload()
             folders = try database.folders()
             setupWatching()
@@ -1581,6 +1653,7 @@ final class AppModel {
         status = "Adding \(files.count) \(files.count == 1 ? "font" : "fonts")…"
         do {
             var addedFaces = 0
+            var cloudErrors = 0
             for (directory, directoryFiles) in grouped {
                 let covering = folders
                     .filter { LibraryPath.isInside(directory, root: $0.path) }
@@ -1592,8 +1665,12 @@ final class AppModel {
                     kind: covering?.kind ?? .staticFolder
                 )
                 addedFaces += report.faces
+                cloudErrors += report.cloudErrors
             }
             status = "Added \(addedFaces) \(addedFaces == 1 ? "font" : "fonts") from \(files.count) \(files.count == 1 ? "file" : "files")"
+            if cloudErrors > 0 {
+                errorMessage = CloudAccess.message
+            }
             await reload()
             folders = try database.folders()
             setupWatching()
@@ -1844,7 +1921,11 @@ final class AppModel {
         // Clear those first so the rows are never dropped while fontd still
         // holds a registration.
         let stale = snapshot.faces
-            .filter { $0.fileStatus != "ok" && activeFaceIDs.contains($0.id) }
+            .filter {
+                $0.fileStatus != "ok"
+                    && $0.fileStatus != "cloud"
+                    && activeFaceIDs.contains($0.id)
+            }
             .map {
                 ActivationTarget(
                     faceID: $0.id,
@@ -1956,7 +2037,7 @@ final class AppModel {
                         kind: folder.kind
                     )
                 }
-                status = report.summary
+                present(report)
                 reloadNeeded = true
             } catch {
                 report(error)
@@ -1979,7 +2060,7 @@ final class AppModel {
                     folder: URL(fileURLWithPath: path),
                     kind: folder.kind
                 )
-                status = report.summary
+                present(report)
                 changed = true
             } catch {
                 report(error)
@@ -2014,7 +2095,7 @@ final class AppModel {
                     folder: URL(fileURLWithPath: folder.path),
                     kind: folder.kind
                 )
-                status = report.summary
+                present(report)
             } catch {
                 report(error)
             }

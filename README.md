@@ -83,9 +83,11 @@ expensive part.
 - Folder labels, watched/static folders, Ignore This Folder for any subtree
   (also managed in Settings → Ignored Folders, with FontBase cache detection),
   font rows disappear, files stay, reveal in Finder, safe removal.
-- Collections with create/rename/delete, add/remove from a family, and
-  Activate All / Deactivate All from the collection menu.
+- Collections, sorted alphabetically, with create/rename/delete, add/remove from a
+  family, and Activate All / Deactivate All from the collection menu.
 - Named preview samples (⌘E) with text, size and colors.
+- Appearance setting in Settings (⌘,) for System, Light or Dark. The choice is
+  remembered across launches and applies to every window, panel and menu.
 - System fonts visible by default, hideable from Filters; Apple's leading `.`
   is stripped for display.
 - Non-Latin family names keep the local name and add a Latin label in
@@ -111,7 +113,8 @@ for re-exported fonts, full GlyphsApp language parity, notarized release.
 ```sh
 swift build
 swift test
-./scripts/test.sh          # tests, headless focus/render/list checks, add-files
+./scripts/ci.sh            # tests, fixtures, headless scenarios, Release bundle
+./scripts/test.sh          # ci.sh plus the network-dependent Google render
 ./scripts/build-icons.sh   # compiles Assets.car and UrFonts.icns from design/icon
 ./scripts/build-app.sh     # assembles build/Ur Fonts.app (ad-hoc signed)
 open "build/Ur Fonts.app"
@@ -119,6 +122,26 @@ open "build/Ur Fonts.app"
 
 The app stores its library at
 `~/Library/Application Support/Ur Fonts/library.sqlite3`.
+
+### Where your data lives
+
+- **Library database:** `~/Library/Application Support/Ur Fonts/library.sqlite3`.
+  Folders, indexed files and faces, the activation journal, collections, saved
+  samples and ignored folder paths.
+- **App preferences:** `~/Library/Preferences/com.10k24.urfonts.plist`.
+  Appearance (`urfonts.appearance`: `system`, `light` or `dark`), system-font
+  visibility (`urfonts.showSystemFonts`) and file-name fallback
+  (`urfonts.fallbackFileNames`). Inspect with
+  `defaults read com.10k24.urfonts`.
+- **Google Fonts downloads:** `~/Library/Application Support/Ur Fonts/GoogleFonts`
+  (catalog cache, TTF files and licenses).
+- **Google host previews:** `~/Library/Caches/Ur Fonts/HostPreviews`. Safe to
+  delete; they are re-fetched.
+- **Exported settings:** versioned JSON, written wherever you choose with
+  Settings → Export. It is not read on launch.
+
+Font files are never modified, moved or copied. The library only stores paths
+and metadata.
 
 A command line surface exists for indexing and diagnostics:
 
@@ -141,8 +164,9 @@ urfonts-cli google-download Inter
 - SwiftUI shell, fixed-height lazy rows, CoreText drawing inside `Canvas`.
 - FSEvents for folder changes.
 
-Design notes and the working backlog live in `AGENTS.md` and
-`OPEN_ISSUES.md`.
+Architecture and data flow: `docs/ARCHITECTURE.md`. Setup, gate and code
+conventions: `CONTRIBUTING.md`. Notable changes: `CHANGELOG.md`. Invariants and
+the working backlog live in `AGENTS.md` and `OPEN_ISSUES.md`.
 
 ## Who
 

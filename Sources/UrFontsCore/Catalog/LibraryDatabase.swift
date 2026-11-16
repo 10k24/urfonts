@@ -455,13 +455,36 @@ public final class LibraryDatabase: Sendable {
         }
     }
 
-    /// Deletes every file row that is not `ok`. Missing rows otherwise persist
-    /// by design so collection membership and warnings survive an offline
-    /// volume; this is the explicit cleanup.
+    /// Marks skipped cloud placeholders so Warnings can show them without
+    /// treating them as missing. Existing rows keep their faces and activation.
+    public func markCloudFiles(folderID: String, paths: [String]) throws {
+        guard !paths.isEmpty else { return }
+        let now = Date().timeIntervalSince1970
+        try queue.write { db in
+            for path in paths {
+                try db.execute(
+                    sql: """
+                        INSERT INTO file (id, folder_id, path, size, mtime_ns,
+                            parse_version, face_count, status, first_seen, last_seen)
+                        VALUES (?, ?, ?, 0, 0, 0, 0, 'cloud', ?, ?)
+                        ON CONFLICT(path) DO UPDATE SET
+                            folder_id = excluded.folder_id,
+                            status = 'cloud',
+                            last_seen = excluded.last_seen
+                        """,
+                    arguments: [UUID().uuidString, folderID, path, now, now]
+                )
+            }
+        }
+    }
+
+    /// Deletes missing and unreadable rows. Cloud placeholders are not missing.
     @discardableResult
     public func deleteMissingFiles() throws -> Int {
         try queue.write { db in
-            try db.execute(sql: "DELETE FROM file WHERE status <> 'ok'")
+            try db.execute(
+                sql: "DELETE FROM file WHERE status <> 'ok' AND status <> 'cloud'"
+            )
             return db.changesCount
         }
     }
@@ -728,7 +751,7 @@ public final class LibraryDatabase: Sendable {
     // MARK: - Collections
 
     public func collections() throws -> [FontCollection] {
-        try queue.read { db in
+        let collections = try queue.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT c.id, c.name, c.sort, c.created_at,
                        (SELECT COUNT(*) FROM collection_item WHERE collection_id = c.id)
@@ -744,6 +767,15 @@ public final class LibraryDatabase: Sendable {
                     faceCount: $0[4]
                 )
             }
+        }
+        // The sidebar has no drag reordering, so name order is the contract.
+        // Sorting here keeps the sidebar, collection menus and CLI consistent.
+        return collections.sorted { left, right in
+            let order = left.name.localizedStandardCompare(right.name)
+            if order == .orderedSame {
+                return left.createdAt < right.createdAt
+            }
+            return order == .orderedAscending
         }
     }
 
@@ -962,7 +994,7 @@ public final class LibraryDatabase: Sendable {
 
     /// Cheap counts for the sidebar badge. The full path list is loaded only
     /// when the Problems page opens.
-    public func problemCounts() throws -> (duplicates: Int, missing: Int) {
+    public func problemCounts() throws -> (duplicates: Int, missing: Int, cloud: Int) {
         try queue.read { db in
             let duplicates = try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM (
@@ -975,9 +1007,13 @@ public final class LibraryDatabase: Sendable {
                 """) ?? 0
             let missing = try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM file WHERE status != 'ok'"
+                sql: "SELECT COUNT(*) FROM file WHERE status NOT IN ('ok', 'cloud')"
             ) ?? 0
-            return (duplicates, missing)
+            let cloud = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM file WHERE status = 'cloud'"
+            ) ?? 0
+            return (duplicates, missing, cloud)
         }
     }
 
@@ -1047,7 +1083,7 @@ public final class LibraryDatabase: Sendable {
             let faces = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM face") ?? 0
             let missing = try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM file WHERE status != 'ok'"
+                sql: "SELECT COUNT(*) FROM file WHERE status NOT IN ('ok', 'cloud')"
             ) ?? 0
             return (files, faces, missing)
         }

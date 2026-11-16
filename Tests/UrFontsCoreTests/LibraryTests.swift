@@ -361,6 +361,37 @@ struct LibraryTests {
         #expect(try database.counts().files == 6)
     }
 
+    @Test("ignored folders survive reopening the database")
+    func ignoredFoldersPersist() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("library.sqlite3")
+        let ignored = directory.appendingPathComponent("Cache").path
+
+        do {
+            let database = try LibraryDatabase(url: url)
+            try database.ignorePath(ignored)
+        }
+
+        let reopened = try LibraryDatabase(url: url)
+        #expect(try reopened.ignoredPaths() == [ignored])
+    }
+
+    @Test("collections are listed alphabetically")
+    func collectionsAlphabetical() throws {
+        let database = try LibraryDatabase(inMemory: true)
+        _ = try database.createCollection(name: "zebra")
+        _ = try database.createCollection(name: "Alpha")
+        _ = try database.createCollection(name: "beta")
+
+        #expect(try database.collections().map(\.name) == ["Alpha", "beta", "zebra"])
+    }
+
     @Test("missing cleanup deletes only unavailable rows")
     func removeMissing() async throws {
         let root = try makeLibrary(count: 4)
@@ -386,6 +417,39 @@ struct LibraryTests {
         #expect(counts.missing == 0)
         #expect(try database.problemFiles().isEmpty)
         #expect(try database.faceIDs(inCollection: collectionID).count == 3)
+    }
+
+    @Test("cloud placeholders are skipped and never marked missing")
+    func cloudPlaceholders() async throws {
+        let root = try makeLibrary(count: 1)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let database = try LibraryDatabase(inMemory: true)
+        _ = try await LibraryScanner(database: database).scan(folder: root)
+
+        let placeholderScanner = LibraryScanner(
+            database: database,
+            cloudPlaceholderCheck: { _, _ in true }
+        )
+        let report = try await placeholderScanner.scan(folder: root)
+        #expect(report.skippedCloud == 1)
+        #expect(report.removedFiles == 0)
+        #expect(try database.counts().files == 1)
+        #expect(try database.counts().missing == 0)
+        let counts = try database.problemCounts()
+        #expect(counts.missing == 0)
+        #expect(counts.cloud == 1)
+        let family = try #require(try database.snapshot().families.first)
+        #expect(family.cloudFaceCount == 1)
+        #expect(family.missingFaceCount == 0)
+        #expect(family.countLabel.contains("cloud"))
+        #expect(try database.deleteMissingFiles() == 0)
+        #expect(try database.problemCounts().cloud == 1)
+
+        _ = try await LibraryScanner(database: database).scan(folder: root)
+        #expect(try database.problemCounts().cloud == 0)
+        #expect(try database.counts().missing == 0)
+        #expect(try database.snapshot().families.first?.cloudFaceCount == 0)
     }
 
     @Test("concurrent scans of one new file do not collide")

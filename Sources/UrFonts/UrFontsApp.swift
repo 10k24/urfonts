@@ -13,7 +13,7 @@ struct UrFontsApp: App {
         }
 
         Settings {
-            IgnoredFoldersSettingsView(model: model)
+            SettingsView(model: model)
         }
     }
 }

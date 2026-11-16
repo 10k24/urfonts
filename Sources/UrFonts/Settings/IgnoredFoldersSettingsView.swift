@@ -9,42 +9,37 @@ struct IgnoredFoldersSettingsView: View {
     @State private var notice: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(Messages.Settings.ignoredFolders)
-                    .font(.title3.weight(.semibold))
-                Text(Messages.Settings.ignoredFoldersHelp)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 14) {
+            Text(Messages.Settings.ignoredFolders)
+                .font(.title3.weight(.semibold))
+            Text(Messages.Settings.ignoredFoldersHelp)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                ignoredList
+            ignoredList
 
-                HStack {
-                    Button(Messages.Settings.addFolder) { chooseFolders() }
-                    Spacer()
-                }
+            HStack {
+                Button(Messages.Settings.addFolder) { chooseFolders() }
+                Spacer()
+            }
 
-                if !visibleSuggestions.isEmpty {
-                    Divider()
-                    Text(Messages.Settings.detectedManagers)
-                        .font(.headline)
-                    ForEach(visibleSuggestions) { suggestion in
-                        suggestionRow(suggestion)
-                    }
-                }
-
-                if let notice {
-                    Text(notice)
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+            if !visibleSuggestions.isEmpty {
+                Divider()
+                Text(Messages.Settings.detectedManagers)
+                    .font(.headline)
+                ForEach(visibleSuggestions) { suggestion in
+                    suggestionRow(suggestion)
                 }
             }
-            .padding(20)
+
+            if let notice {
+                Text(notice)
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .frame(width: 600, height: 440)
-        .background(Color(nsColor: .windowBackgroundColor))
         .task {
             await model.start()
             await loadSuggestions()

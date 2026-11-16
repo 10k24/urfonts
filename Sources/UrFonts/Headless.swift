@@ -541,14 +541,14 @@ enum Headless {
         logger.check(!model.isLoading, "library loaded")
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 440),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 480),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
         )
         window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
         window.contentView = NSHostingView(
-            rootView: IgnoredFoldersSettingsView(model: model)
+            rootView: SettingsView(model: model)
         )
         window.orderBack(nil)
         window.displayIfNeeded()

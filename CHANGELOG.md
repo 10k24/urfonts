@@ -1,0 +1,49 @@
+# Changelog
+
+All notable changes are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0, minor
+versions may change behavior.
+
+## [Unreleased]
+
+### Added
+
+- Folder indexing with static and watched roots, FSEvents deltas, a five-minute
+  sweep and a nested folder tree built from indexed paths.
+- Read-only font parsing for `head`, `hhea`, `OS/2`, `name` and `fvar`, including
+  TTC/OTC collections and variable font axes.
+- Family-first browser with list and grid layouts, fixed-height CoreText rows,
+  search by family, style and PostScript name, and kind, italic, bold and script
+  filters.
+- Preview text, presets and a 12–108 pt size slider in the status bar, with text
+  and background colors.
+- Global activation through CoreText with a journal, launch reconciliation,
+  duplicate PostScript detection and installed-font protection.
+- Font sheet with per-style activation, variable axes, glyph map, OpenType
+  feature tags, file paths and info.
+- Collections with create, rename, delete and bulk activation, always sorted
+  alphabetically.
+- Saved preview samples with text, size and colors.
+- Warnings for duplicate PostScript names, missing files and cloud placeholders
+  that are not downloaded.
+- Google Fonts host with inline subset previews, per-style downloads, license
+  labels and the same activation controls as local fonts.
+- Versioned settings export and import for folders, collections, samples,
+  preview settings and ignored folder paths.
+- Settings for appearance (System, Light, Dark) and ignored folders, both
+  persisted across launches.
+- Headless scenarios that render real views offscreen and prove the process never
+  takes focus.
+- CI gate covering tests, a Release build, fixtures, CLI round trip, headless
+  scenarios and app bundle assembly.
+
+### Fixed
+
+- Font files skipped by an online-only cloud provider are recorded as cloud
+  placeholders instead of missing or damaged fonts.
+- Network, timeout and offline failures show a retryable message instead of a
+  database or file-system error.
+- A file owned by two overlapping roots is moved to one folder rather than
+  failing the scan.
+- Preview rows no longer reload a font when only the point size changes.

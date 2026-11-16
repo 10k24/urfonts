@@ -53,6 +53,13 @@ struct ActivationDot: View {
                 help: Messages.Activation.fileMissing,
                 action: nil
             )
+        case .cloud:
+            ActivationGlyph(
+                symbol: "icloud.slash",
+                tint: nil,
+                help: Messages.Activation.cloud,
+                action: nil
+            )
         case .blocked(let ownerPath):
             ActivationGlyph(
                 symbol: "square",
@@ -119,6 +126,13 @@ struct FaceActivationControl: View {
                 symbol: "questionmark.square",
                 tint: nil,
                 help: Messages.Activation.fileMissing,
+                action: nil
+            )
+        case .cloud:
+            ActivationGlyph(
+                symbol: "icloud.slash",
+                tint: nil,
+                help: Messages.Activation.cloud,
                 action: nil
             )
         case .blocked(let ownerPath):

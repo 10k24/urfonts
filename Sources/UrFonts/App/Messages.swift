@@ -74,6 +74,31 @@ enum Messages {
     }
 
     enum Settings {
+        static let appearance = String(
+            localized: "settings.appearance",
+            defaultValue: "Appearance",
+            comment: "Settings section"
+        )
+        static let appearanceHelp = String(
+            localized: "settings.appearance.help",
+            defaultValue: "System follows your Mac setting. Light and Dark apply to every window, panel and menu.",
+            comment: "Settings help"
+        )
+        static let appearanceSystem = String(
+            localized: "settings.appearance.system",
+            defaultValue: "System",
+            comment: "Appearance option"
+        )
+        static let appearanceLight = String(
+            localized: "settings.appearance.light",
+            defaultValue: "Light",
+            comment: "Appearance option"
+        )
+        static let appearanceDark = String(
+            localized: "settings.appearance.dark",
+            defaultValue: "Dark",
+            comment: "Appearance option"
+        )
         static let ignoredFolders = String(
             localized: "settings.ignoredFolders",
             defaultValue: "Ignored Folders",
@@ -175,6 +200,11 @@ enum Messages {
             defaultValue: "File missing",
             comment: "Activation help"
         )
+        static let cloud = String(
+            localized: "activation.cloud",
+            defaultValue: "Not downloaded from cloud",
+            comment: "Activation help"
+        )
         static let downloadAndActivate = String(
             localized: "activation.downloadAndActivate",
             defaultValue: "Download and activate",
@@ -219,6 +249,11 @@ enum Messages {
         static let missing = String(
             localized: "problems.missing",
             defaultValue: "Missing or unreadable files",
+            comment: "Warnings section"
+        )
+        static let cloud = String(
+            localized: "problems.cloud",
+            defaultValue: "Not downloaded from cloud",
             comment: "Warnings section"
         )
     }

@@ -10,6 +10,9 @@ public enum LibraryErrorText {
         "Something went wrong. Please try again."
 
     public static func message(for error: Error) -> String {
+        if CloudAccess.isUnavailable(error) {
+            return CloudAccess.message
+        }
         if error is DatabaseError {
             return databaseFailure
         }

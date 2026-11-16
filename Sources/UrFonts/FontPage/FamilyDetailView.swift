@@ -159,7 +159,8 @@ struct FamilyDetailView: View {
                                 ) == .orderedSame
                         }
                     let fileName = (face.path as NSString).lastPathComponent
-                    let isMissing = face.fileStatus != "ok"
+                    let isCloud = face.fileStatus == "cloud"
+                    let isMissing = face.fileStatus != "ok" && !isCloud
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 14) {
                             FaceActivationControl(
@@ -188,7 +189,12 @@ struct FamilyDetailView: View {
                             }
                             .frame(width: 190, alignment: .leading)
 
-                            if isMissing {
+                            if isCloud {
+                                Text("Not downloaded from cloud")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else if isMissing {
                                 Text("File missing")
                                     .font(.caption)
                                     .foregroundStyle(.orange)
@@ -217,7 +223,12 @@ struct FamilyDetailView: View {
                             .help(face.path)
                             .padding(.leading, 32)
 
-                        if isMissing {
+                        if isCloud {
+                            Text("Not downloaded from cloud")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .padding(.leading, 32)
+                        } else if isMissing {
                             Text("Missing file")
                                 .font(.caption2)
                                 .foregroundStyle(.orange)

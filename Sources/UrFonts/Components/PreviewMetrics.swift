@@ -5,7 +5,7 @@ import CoreGraphics
 /// Rows, grid tiles and the font page all read these values, so changing
 /// `controlScale` resizes every checkbox, hit target and VF badge together.
 enum PreviewMetrics {
-    static let controlScale: CGFloat = 1.5
+    static let controlScale: CGFloat = 1.1
 
     static let activationIconSize: CGFloat = (15 * controlScale).rounded()
     static let activationHitSize: CGFloat = (20 * controlScale).rounded()

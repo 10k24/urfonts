@@ -57,28 +57,14 @@ Locked decisions:
 ### Phase 3 - Activation
 
 - **Activation UI.** Temporary activation from the UI and an "activate more than
-  N families" warning. Collection bulk activation is implemented.
-- **Activation failure feedback.** Duplicate conflicts show the owner path
-  inline. Add reveal-in-Finder for a failed file and a one-click retry.
-- **Style activation from the page.** Per-file checkboxes are implemented;
-  keyboard focus and bulk style toggles remain.
+  N families" warning.
+- **Activation failure feedback.** Reveal in Finder and a one-click retry after
+  a failed activation or a duplicate owner conflict.
+- **Style activation from the page.** Keyboard focus and bulk style toggles in
+  the font sheet.
 
 ### Phase 4 - Watcher
 
-- **Cloud file providers.** An online-only Dropbox root stalled with no output
-  and no files committed. Plan:
-  - Check metadata before opening a file: File Provider dataless attribute and
-    iCloud download status. Verify the exact API against Apple docs before
-    coding.
-  - Skip placeholders with a `skippedCloud` count in `ScanReport`; never mark
-    them missing or damaged.
-  - Show them in Warnings as “Not downloaded from cloud,” not as a deletion
-    candidate.
-  - Once the provider materializes the file, the next event or sweep indexes it
-    normally.
-  - Keep provider roots opt-in and add a read timeout for non-placeholder files.
-  - Test with an injected placeholder predicate plus one real online-only cloud
-    folder; confirm no hang.
 - **Event replay.** Events while the app was closed rely on the launch rescan
   and the five-minute sweep. Persist and replay FSEvents IDs if a real folder
   proves this is not enough.
@@ -93,8 +79,9 @@ Locked decisions:
 
 ### Phase 6 - Organize
 
-- **Collection polish.** Nested collections, multi-select adds. Drag-and-drop
-  was removed; it needs an AppKit or custom-list solution.
+- **Collection polish.** Nested collections, multi-select adds. Reordering needs
+  an AppKit or custom-list solution; `List`/`OutlineGroup` swallow row drag and
+  drop.
 - **Tags.** User tags with colors, auto tags from PANOSE, name and outline
   heuristics.
 - **Notes and ratings.**
@@ -140,8 +127,8 @@ under 16 ms at full scale.
   document types, icon, hardened runtime, Sparkle framework.
 - **Release.** Sign, notarize, staple, DMG, appcast.
 - **Homebrew cask.**
-- **Help and docs.** README exists; add in-app help, first run, activation
-  semantics and known limits before launch.
+- **Help and docs.** In-app help, first run, activation semantics and known
+  limits before launch.
 - **Donation option.** Add a Buy Me a Coffee (or equivalent) link to the README,
   the About panel, and the first release notes.
 - **Manual-use gate.** Launch only after several weeks of the author using it as
@@ -177,18 +164,13 @@ a font.
 
 ### Open Source Gate
 
-- **CI harness.** Run `swift test`, the fixture generator, the headless scenarios
-  and a Release build on a macOS runner. Gate: green with no focus change.
+- **Repo hygiene.** No trial libraries, font files, generated build artifacts or
+  signing secrets in git. Confirm Apache-2.0 and NOTICE.
 - **Bench gate.** Index, search and scroll budgets from `AGENTS.md` fail the
   build when exceeded.
 - **Performance run.** Measure warm launch, scroll p50/p99, search, activation
   and RSS in Release on the real library. Record method and raw numbers.
-- **Public docs.** ARCHITECTURE and CONTRIBUTING with build, test and headless
-  commands. No Adobe-specific doc.
-- **Release docs.** CHANGELOG, versioning, issue/PR templates and a support
-  policy for macOS 15+.
-- **Repo hygiene.** No trial libraries, font files, generated build artifacts or
-  signing secrets in git. Confirm Apache-2.0 and NOTICE.
+- **Release process docs.** Issue and PR templates plus a versioning policy.
 - **Release automation.** Reproducible DMG, signing/notarization workflow and
   Sparkle appcast.
 
@@ -349,6 +331,14 @@ features are listed too, so the gap is explicit rather than implied.
 - **Watching a real folder.** Drop a font into a watched Dropbox folder and
   confirm it appears within the debounce without a full rescan; check the
   five-minute sweep after quitting and relaunching.
+- **Cloud placeholders.** Dataless and iCloud placeholders are stored as `cloud`,
+  skipped with `skippedCloud`, shown in Warnings, not counted as missing, and
+  index after materialization. Covered with an injected placeholder predicate.
+  Still needs one real online-only Dropbox/iCloud folder and a read-timeout
+  check.
+- **Cloud access errors.** URLError and POSIX timeout/offline failures map to a
+  retryable cloud message and raise an alert after a scan. Needs a real
+  disconnected/timeout check against a provider-backed folder.
 - **Coverage on the real library.** Index the full library and confirm the time
   is acceptable on the Dropbox-backed folders; check that script filters and
   script-aware previews match the fonts, especially CJK and Arabic.
@@ -416,6 +406,11 @@ features are listed too, so the gap is explicit rather than implied.
 - **Headless harness.** `--headless focus-check` proves the process never
   activates while creating and backing a window; `render`, `browser`, `scroll`,
   `detail`, `settings` and `google-detail` cover the real views offscreen.
+- **CI gate.** `.github/workflows/ci.yml` runs `scripts/ci.sh` on `macos-15`;
+  `actionlint` validates it because `act` cannot emulate macOS runners.
+- **Project docs.** `docs/ARCHITECTURE.md` maps modules and data flow;
+  `CONTRIBUTING.md` covers setup, gate, style and support; `CHANGELOG.md` tracks
+  unreleased changes.
 - **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
   by `--headless list-spike`; the real browser re-measures in Phase 2.
 - **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`
@@ -466,6 +461,11 @@ features are listed too, so the gap is explicit rather than implied.
   serializes watcher, sweep, rescan and import scans. `apply` reuses a globally
   existing file row instead of inserting a duplicate. Raw database errors are
   logged and replaced with safe UI text; no SQL reaches an alert.
+- **Cloud placeholders and errors.** Dataless and iCloud placeholders are stored
+  as `cloud`, shown separately in Warnings, never counted as missing or removed.
+  Family counts, activation controls and file rows distinguish cloud; a
+  materialized file returns on the next scan. Timeouts and offline failures map
+  to a retryable cloud message through `CloudAccess`.
 - **Watched folders in the UI.** Add Folder offers Watch or One-time Scan;
   sidebar eye icon and Watch/Stop Watching actions.
 - **Canonical paths.** Scanner and watcher agree on `realpath`; delta scans
@@ -497,7 +497,8 @@ features are listed too, so the gap is explicit rather than implied.
   loaded ranges; filters combine with script, kind, italic and bold.
 - **Collections.** Create, rename, delete; add or remove a family from the row
   context menu; sidebar selection filters by collection; member faces survive a
-  missing file. Context menu activates or deactivates all stored faces.
+  missing file. Context menu activates or deactivates all stored faces. The list
+  is always alphabetical because there is no drag reordering.
 - **Nested folders.** The sidebar mirrors indexed directories with native
   List/OutlineGroup rows, path-prefix selection, family counts, and watched
   icons.
@@ -505,8 +506,9 @@ features are listed too, so the gap is explicit rather than implied.
   indexed folder join it, outside files get a parent-directory root.
 - **Folder exclusions.** Ignore This Folder and Settings → Ignored Folders share
   one list: resolved paths, add/remove, warnings before an overlapping add,
-  deactivation, row deletion, and skipped full/delta scans. FontBase cache
-  suggestions come from a manager-agnostic detector protocol.
+  deactivation, row deletion, and skipped full/delta scans. The list persists as
+  `excluded_path` rows in the library database. FontBase cache suggestions come
+  from a manager-agnostic detector protocol.
 - **Nested roots.** Deepest indexed root owns each file; adding a nested root
   adopts rows, parent scans skip deeper subtrees, and removal re-parents rows to
   the deepest remaining ancestor.
@@ -532,7 +534,11 @@ features are listed too, so the gap is explicit rather than implied.
 - **Preview layout.** List rows wrap to two or four lines with ink-based line
   spacing and grow with the size slider; grid tiles stay single-line, honor the
   size, and truncate. Size slider lives in the status bar (12-108 pt) so it keeps
-  the accent tint.
+  the accent tint. The 42 pt default sits at the visual midpoint: `PreviewSizeScale`
+  maps 12-42 to the lower half and 42-108 to the upper half, so a linear slider
+  never reads as if the default were the low end.
+- **Appearance setting.** System default, Light and Dark, persisted as
+  `urfonts.appearance` and applied through `NSApp.appearance`.
 - **Missing glyphs.** Preview rendering replaces CoreText fallback runs with the
   primary font's `.notdef`. The CoreText glyph test covers missing-character
   mapping; the headless render covers the drawn result.

@@ -52,6 +52,9 @@ struct FamilyDisplay: Identifiable, Equatable {
         if family.missingFaceCount > 0 {
             reasons.append("\(family.missingFaceCount) file(s) missing")
         }
+        if family.cloudFaceCount > 0 {
+            reasons.append("\(family.cloudFaceCount) file(s) not downloaded from cloud")
+        }
         self.init(
             id: family.id,
             name: family.name,

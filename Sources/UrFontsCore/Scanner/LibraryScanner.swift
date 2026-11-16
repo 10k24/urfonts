@@ -8,14 +8,16 @@ public struct ScanReport: Sendable, Equatable {
     public let unchangedFiles: Int
     public let removedFiles: Int
     public let failedFiles: Int
+    public let skippedCloud: Int
+    public let cloudErrors: Int
     public let faces: Int
     public let seconds: Double
 
     public var summary: String {
         let summary = String(
-            format: "Scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, fonts %d, %.2f s",
+            format: "Scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, cloud skipped %d, cloud errors %d, fonts %d, %.2f s",
             scannedFiles, newFiles, changedFiles, unchangedFiles,
-            removedFiles, failedFiles, faces, seconds
+            removedFiles, failedFiles, skippedCloud, cloudErrors, faces, seconds
         )
         return summary
     }
@@ -32,9 +34,14 @@ public enum ScanError: Error, Equatable {
 public actor LibraryScanner {
     private let database: LibraryDatabase
     private let fontExtensions: Set<String> = ["ttf", "otf", "ttc", "otc", "dfont"]
+    private let cloudPlaceholderCheck: (@Sendable (URL, URLResourceValues?) -> Bool)?
 
-    public init(database: LibraryDatabase) {
+    public init(
+        database: LibraryDatabase,
+        cloudPlaceholderCheck: (@Sendable (URL, URLResourceValues?) -> Bool)? = nil
+    ) {
         self.database = database
+        self.cloudPlaceholderCheck = cloudPlaceholderCheck
     }
 
     public func scan(
@@ -52,17 +59,23 @@ public actor LibraryScanner {
         try adoptFromAncestors(folderID: folderID, path: folderPath, roots: roots)
         let existing = try database.existingFiles(folderID: folderID)
 
-        guard let candidates = enumerate(
+        guard let enumeration = enumerate(
             folder: URL(fileURLWithPath: folderPath),
             ignoring: skip
         ) else {
             throw ScanError.unreadableFolder
         }
+        let candidates = enumeration.files
+        let skippedCloud = enumeration.skippedCloud
+        try database.markCloudFiles(
+            folderID: folderID,
+            paths: Array(skippedCloud)
+        )
 
         let currentVersion = FontFileParser.version
         var pending: [(url: URL, stamp: FileStamp)] = []
-        var seen = Set<String>()
-        seen.reserveCapacity(candidates.count)
+        var seen = skippedCloud
+        seen.reserveCapacity(candidates.count + skippedCloud.count)
         var unchanged = 0
         var newFiles = 0
         var changedFiles = 0
@@ -87,12 +100,18 @@ public actor LibraryScanner {
             }
         }
 
-        let removed = existing.compactMap { path, file in
-            seen.contains(path) || file.stamp.status != "ok" ? nil : path
+        let removed: [String] = existing.compactMap { path, file in
+            if seen.contains(path) { return nil }
+            if file.stamp.status == "ok" || file.stamp.status == "cloud" {
+                return path
+            }
+            return nil
         }
 
-        let parsed = await parse(candidates: pending)
-        let failed = pending.count - parsed.count
+        let outcomes = await parse(candidates: pending)
+        let parsed = outcomes.compactMap(\.file)
+        let failed = outcomes.filter { $0.file == nil }.count
+        let cloudErrors = outcomes.filter(\.cloudError).count
 
         try database.apply(
             folderID: folderID,
@@ -110,6 +129,8 @@ public actor LibraryScanner {
             unchangedFiles: unchanged,
             removedFiles: removed.count,
             failedFiles: failed,
+            skippedCloud: skippedCloud.count,
+            cloudErrors: cloudErrors,
             faces: parsed.reduce(0) { $0 + $1.faces.count },
             seconds: Date().timeIntervalSince(started)
         )
@@ -137,6 +158,7 @@ public actor LibraryScanner {
         var unchanged = 0
         var newFiles = 0
         var changedFiles = 0
+        var skippedCloud = Set<String>()
         var seen = 0
 
         for rawPath in Set(paths) {
@@ -154,6 +176,10 @@ public actor LibraryScanner {
                 continue
             }
             guard !isDirectory.boolValue else { continue }
+            if isPlaceholder(fileURL) {
+                skippedCloud.insert(path)
+                continue
+            }
             guard let stamp = stamp(for: fileURL) else { continue }
 
             if let known = existing[path],
@@ -173,8 +199,14 @@ public actor LibraryScanner {
             }
         }
 
-        let parsed = await parse(candidates: pending)
-        let failed = pending.count - parsed.count
+        let outcomes = await parse(candidates: pending)
+        let parsed = outcomes.compactMap(\.file)
+        let failed = outcomes.filter { $0.file == nil }.count
+        let cloudErrors = outcomes.filter(\.cloudError).count
+        try database.markCloudFiles(
+            folderID: folderID,
+            paths: Array(skippedCloud)
+        )
         try database.apply(
             folderID: folderID,
             parsed: parsed,
@@ -191,6 +223,8 @@ public actor LibraryScanner {
             unchangedFiles: unchanged,
             removedFiles: removed.count,
             failedFiles: failed,
+            skippedCloud: skippedCloud.count,
+            cloudErrors: cloudErrors,
             faces: parsed.reduce(0) { $0 + $1.faces.count },
             seconds: Date().timeIntervalSince(started)
         )
@@ -231,13 +265,14 @@ public actor LibraryScanner {
     private func enumerate(
         folder: URL,
         ignoring ignored: [String]
-    ) -> [(url: URL, stamp: FileStamp)]? {
+    ) -> (files: [(url: URL, stamp: FileStamp)], skippedCloud: Set<String>)? {
         let keys: [URLResourceKey] = [
             .isRegularFileKey,
             .isDirectoryKey,
             .fileSizeKey,
             .contentModificationDateKey,
             .fileResourceIdentifierKey,
+            .ubiquitousItemDownloadingStatusKey,
         ]
         guard let enumerator = FileManager.default.enumerator(
             at: folder,
@@ -249,12 +284,20 @@ public actor LibraryScanner {
         }
 
         var result: [(url: URL, stamp: FileStamp)] = []
+        var skippedCloud = Set<String>()
         while let item = enumerator.nextObject() as? URL {
             let path = item.path
+            let values = try? item.resourceValues(forKeys: Set(keys))
+            let isDirectory = values?.isDirectory ?? false
             if ignored.contains(where: { LibraryPath.isInside(path, root: $0) }) {
                 // Skip the whole subtree; an ignored folder can hold many files.
-                let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?
-                    .isDirectory ?? false
+                if isDirectory {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+            if isPlaceholder(item, values: values) {
+                skippedCloud.insert(path)
                 if isDirectory {
                     enumerator.skipDescendants()
                 }
@@ -264,7 +307,36 @@ public actor LibraryScanner {
             guard let stamp = stamp(for: item) else { continue }
             result.append((item, stamp))
         }
-        return result
+        return (result, skippedCloud)
+    }
+
+    private func isPlaceholder(
+        _ url: URL,
+        values: URLResourceValues? = nil
+    ) -> Bool {
+        if let cloudPlaceholderCheck {
+            return cloudPlaceholderCheck(url, values)
+        }
+        return isCloudPlaceholder(url, values: values)
+    }
+
+    /// File Provider dataless files and iCloud placeholders. Reading either can
+    /// block on the provider, so they are skipped until materialized.
+    private func isCloudPlaceholder(
+        _ url: URL,
+        values: URLResourceValues? = nil
+    ) -> Bool {
+        let resourceValues = values ?? (try? url.resourceValues(
+            forKeys: [.ubiquitousItemDownloadingStatusKey]
+        ))
+        if resourceValues?.ubiquitousItemDownloadingStatus == .notDownloaded {
+            return true
+        }
+        var info = stat()
+        if stat(url.path, &info) == 0 {
+            return (info.st_flags & UInt32(SF_DATALESS)) != 0
+        }
+        return false
     }
 
     /// Ignored subtrees plus subtrees owned by a deeper indexed root. A parent
@@ -305,7 +377,14 @@ public actor LibraryScanner {
         }
     }
 
-    private func parse(candidates: [(url: URL, stamp: FileStamp)]) async -> [ScannedFile] {
+    private struct ParseOutcome {
+        let file: ScannedFile?
+        let cloudError: Bool
+    }
+
+    private func parse(
+        candidates: [(url: URL, stamp: FileStamp)]
+    ) async -> [ParseOutcome] {
         guard !candidates.isEmpty else { return [] }
 
         let cores = max(1, ProcessInfo.processInfo.activeProcessorCount)
@@ -318,27 +397,35 @@ public actor LibraryScanner {
             index = end
         }
 
-        return await withTaskGroup(of: [ScannedFile].self) { group in
+        return await withTaskGroup(of: [ParseOutcome].self) { group in
             for chunk in chunks {
                 group.addTask {
-                    chunk.compactMap { candidate in
-                        guard let faces = try? FontFileParser.parse(url: candidate.url) else {
-                            return nil
+                    chunk.map { candidate in
+                        do {
+                            let faces = try FontFileParser.parse(url: candidate.url)
+                            return ParseOutcome(
+                                file: ScannedFile(
+                                    url: candidate.url,
+                                    stamp: candidate.stamp,
+                                    faces: faces
+                                ),
+                                cloudError: false
+                            )
+                        } catch {
+                            return ParseOutcome(
+                                file: nil,
+                                cloudError: CloudAccess.isUnavailable(error)
+                            )
                         }
-                        return ScannedFile(
-                            url: candidate.url,
-                            stamp: candidate.stamp,
-                            faces: faces
-                        )
                     }
                 }
             }
-            var parsed: [ScannedFile] = []
-            parsed.reserveCapacity(candidates.count)
+            var outcomes: [ParseOutcome] = []
+            outcomes.reserveCapacity(candidates.count)
             for await chunk in group {
-                parsed.append(contentsOf: chunk)
+                outcomes.append(contentsOf: chunk)
             }
-            return parsed
+            return outcomes
         }
     }
 }

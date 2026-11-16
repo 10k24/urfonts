@@ -146,6 +146,15 @@ These are the facts the design rests on. Verify before changing any of them.
   `PreviewMetrics.controlScale`. Change that one value to resize them together;
   do not reintroduce size literals in `ActivationDot`, `FaceActivationControl`
   or row accessories.
+- App appearance is a user setting (System default, Light, Dark) persisted as
+  `urfonts.appearance`. `AppModel.applyAppearance` is the only writer to
+  `NSApp.appearance`; per-window `preferredColorScheme` would leave open/save
+  panels and menus on the system setting. The Settings scene is `SettingsView`
+  (appearance section plus the ignored-folder section).
+- The preview size slider spans 12-108 pt with the 42 pt default at the visual
+  midpoint. `PreviewSizeScale` owns that mapping (12-42 lower half, 42-108 upper
+  half); `AccentSlider` only renders it and rounds to whole points. A linear
+  slider puts 42 at 31% travel, which reads as the low end.
 - Sorting uses the displayed family name, after system dot stripping, not the
   raw grouping key. Otherwise Apple's dot-prefixed names sort before letters.
 - Presets live in `PreviewPreset` and only change the sample text. Size is a
@@ -236,7 +245,9 @@ These are the facts the design rests on. Verify before changing any of them.
 - Collections store face IDs, not family IDs. A family is in a collection when
   any of its faces is. Missing files keep their faces, so collection membership
   survives an offline volume. Counts are cached per collection. The collection
-  menu activates or deactivates all stored faces in bulk.
+  menu activates or deactivates all stored faces in bulk. Collections are always
+  listed alphabetically (`localizedStandardCompare`, creation time as the
+  tie-break): the sidebar has no drag reordering, so name order is the contract.
 - Active is a selection scope over the activation journal, not a folder. It
   lists families with any active face and counts active faces; changing the
   journal invalidates the visible cache. Installed system fonts never appear.
@@ -349,9 +360,13 @@ These are the facts the design rests on. Verify before changing any of them.
   stalled indefinitely because reading a placeholder blocks on the provider.
   Before opening a font, check File Provider dataless metadata and iCloud
   download status. Skip placeholders with a `skippedCloud` scan count; never
-  mark them missing. Warnings should say "Not downloaded from cloud," not offer
-  deletion. A materialized file is indexed by the next event or sweep. Keep
-  provider roots opt-in and never scan a provider root by default.
+  mark them missing. Store them with status `cloud`; Warnings shows "Not
+  downloaded from cloud" and never offers deletion. Family counts, file rows and
+  activation controls distinguish cloud from missing. Cloud timeouts and network
+  failures are classified by `CloudAccess` and surface as a retryable cloud
+  error, never as a damaged font. A materialized
+  file is indexed by the next event or sweep. Keep provider roots opt-in and
+  never scan a provider root by default.
 - Paths must be resolved before they are compared. Foundation does not resolve
   the `/var` firmlink (`resolvingSymlinksInPath` leaves it), but FileManager and
   FSEvents return `/private/var/...`. User boundaries (folder add, ignore list,
@@ -440,6 +455,13 @@ These are the facts the design rests on. Verify before changing any of them.
   bitmap when view lifecycle matters. No event loop needed.
 - Artifacts go to `$TMPDIR/urfonts-headless/<run>/`: log, JSON state, PNGs.
 - Unit and core tests use `swift test` and never launch the app.
+- CI runs `scripts/ci.sh` on `macos-15`; `scripts/test.sh` is the same gate plus
+  the network-dependent Google render. The image default Xcode predates Swift
+  6.2, so the workflow selects the latest stable Xcode first. `act` cannot
+  emulate macOS runners; validate workflow changes with `actionlint`.
+- `AppModel` can be constructed before any `NSApplication` exists (the
+  `ImageRenderer` path). Never touch `NSApp` from its initializer without a nil
+  guard; `start()` applies the appearance once the app is up.
 
 ### Documents
 
@@ -463,6 +485,26 @@ Planned. Nothing in this section is implemented yet.
   Sparkle is planned for release. One dependency for updates, one for the
   database remains the target.
 - Apache-2.0. MIT-derived code keeps its notice in `NOTICE`.
+
+### Documentation
+
+- `README.md` is for users: features, requirements, commands and where data
+  lives. Update it for every user-visible behavior, command or path change.
+- `docs/ARCHITECTURE.md` is the structural map and data flow. Update it when a
+  module boundary, schema, command surface or data path changes.
+- `CONTRIBUTING.md` covers setup, the gate, style and support policy. Update it
+  when requirements, scripts or review rules change.
+- `CHANGELOG.md` records notable user-visible changes under `Unreleased`, grouped
+  as Added, Changed, Fixed or Removed. Use release dates only when a version is
+  tagged.
+- `AGENTS.md` is the canonical record of invariants and measurement rules. Other
+  docs link to its budgets instead of copying numbers.
+- `OPEN_ISSUES.md` is a kanban; its heading is the only state marker.
+- Update the affected docs in the same change as the behavior, not later. A
+  behavior change that leaves the docs stale is an incomplete change.
+- Docs never use line numbers, `file:line` references, generated counts,
+  timestamps or copied benchmark numbers. Refer to symbols, file names, sections
+  or the budgets in this file instead.
 
 ## Architecture / file layout
 
@@ -493,11 +535,14 @@ Tests/UrFontsCoreTests       parser, scanner, catalog, activation with fakes
 Tests/UrFontsSnapshotTests   planned: ImageRenderer golden images
 macos/                       Info.plist
 Resources/                   planned: character sets, language data
-scripts/                     build-icons.sh, build-app.sh, release, make-dmg,
-                             test, bench (release scripts planned)
+scripts/                     build-icons.sh, build-app.sh, ci.sh, test.sh,
+                             register-spike.sh (release scripts planned)
 design/icon/                 Icon Composer source plus legacy 1024 PNG
 tools/                       fixture generator
-docs/                        planned: ARCHITECTURE.md, CONTRIBUTING.md
+docs/                        ARCHITECTURE.md
+CONTRIBUTING.md              setup, gate, style, support policy
+CHANGELOG.md                 Keep a Changelog, Unreleased until first release
+README.md                    user-facing overview and data locations
 ```
 
 Rules:

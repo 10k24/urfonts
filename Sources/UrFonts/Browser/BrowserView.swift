@@ -371,8 +371,12 @@ struct BrowserView: View {
             Spacer()
             HStack(spacing: 6) {
                 Text("Aa")
-                AccentSlider(value: $model.sampleSize, range: 12...108)
-                    .frame(width: 100)
+                AccentSlider(
+                    value: $model.sampleSize,
+                    range: PreviewSizeScale.standard.range,
+                    center: PreviewSizeScale.standard.center
+                )
+                .frame(width: 100)
                     .accessibilityLabel("Preview size")
                 Text("\(Int(model.sampleSize))")
                     .monospacedDigit()
