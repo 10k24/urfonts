@@ -53,6 +53,9 @@ Locked decisions:
 - **Slider debounce check.** Confirm the size slider is smooth with derived
   fonts on the full library in a real window; add debounce only if a
   measurement shows it is needed.
+- **Scroll and RSS budget.** Offscreen row-step p99 is above the 8.3 ms budget and
+  peak RSS is above 300 MB (see `BENCH.md`). Measure a real window with signposts
+  and steady-state RSS, then fix the cause rather than relaxing the budget.
 
 ### Phase 3 - Activation
 
@@ -411,6 +414,9 @@ features are listed too, so the gap is explicit rather than implied.
 - **Project docs.** `docs/ARCHITECTURE.md` maps modules and data flow;
   `CONTRIBUTING.md` covers setup, gate, style and support; `CHANGELOG.md` tracks
   unreleased changes.
+- **Bench harness.** `--headless bench` times snapshot load and the search
+  rebuild; `scripts/bench.sh` times a cold fixture index and row scrolling;
+  `BENCH.md` records the method, environment and raw numbers.
 - **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
   by `--headless list-spike`; the real browser re-measures in Phase 2.
 - **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`

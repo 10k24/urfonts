@@ -33,6 +33,8 @@ enum Headless {
             exit(browser())
         case "scroll":
             exit(browserScroll())
+        case "bench":
+            exit(bench())
         case "detail":
             exit(detail())
         case "add-files":
@@ -733,6 +735,55 @@ enum Headless {
                 model.query, model.visibleFamilies.count,
                 first.0 * 1000, first.1 * 1000, first.2 * 1000,
                 second.0 * 1000, second.1 * 1000, second.2 * 1000
+            )
+        )
+        return logger.finish()
+    }
+
+    /// Measures snapshot load and the synchronous rebuild that runs on every
+    /// keystroke. Row rendering is not included; scroll timing is
+    /// `--headless scroll`. `load` covers database open plus snapshot build, not
+    /// first paint.
+    private static func bench() -> Int32 {
+        let logger = Logger(name: "bench")
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+
+        let loadStarted = CACurrentMediaTime()
+        let model = AppModel()
+        Task { @MainActor in await model.start() }
+        let deadline = Date().addingTimeInterval(60)
+        while model.isLoading, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        logger.check(!model.isLoading, "library loaded")
+        let loadMs = (CACurrentMediaTime() - loadStarted) * 1000
+
+        let queries = [
+            "a", "e", "i", "o", "u", "s", "t", "r", "n",
+            "font", "sans", "serif", "display", "script", "trial",
+            "mono", "grotesk", "text", "book", "italic",
+        ]
+        var samples: [TimeInterval] = []
+        samples.reserveCapacity(queries.count)
+        for query in queries {
+            let started = CACurrentMediaTime()
+            model.query = query
+            _ = model.visibleFamilies.count
+            samples.append(CACurrentMediaTime() - started)
+        }
+        model.query = ""
+
+        let sorted = samples.sorted()
+        let p50 = sorted[sorted.count / 2]
+        let p99 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.99))]
+        logger.check(
+            p99 < 0.016,
+            String(
+                format: "load=%.1f ms families=%d search p50=%.2f p99=%.2f max=%.2f ms",
+                loadMs, model.snapshot.families.count,
+                p50 * 1000, p99 * 1000, (sorted.last ?? 0) * 1000
             )
         )
         return logger.finish()

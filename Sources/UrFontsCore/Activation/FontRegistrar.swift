@@ -158,9 +158,9 @@ private final class FailureBox: @unchecked Sendable {
         for index in 0..<count {
             guard let raw = CFArrayGetValueAtIndex(errors, index) else { continue }
             let error = unsafeBitCast(raw, to: CFError.self)
-            let nsError = error as NSError
             let key = kCTFontManagerErrorFontURLsKey as String
-            let failedURLs = (nsError.userInfo[key] as? [NSURL] ?? []).map { $0 as URL }
+            let userInfo = CFErrorCopyUserInfo(error) as? [String: Any]
+            let failedURLs = (userInfo?[key] as? [NSURL] ?? []).map { $0 as URL }
             add(failure: RegistrationFailure(
                 message: error.localizedDescription,
                 urls: failedURLs

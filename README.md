@@ -115,6 +115,7 @@ swift build
 swift test
 ./scripts/ci.sh            # tests, fixtures, headless scenarios, Release bundle
 ./scripts/test.sh          # ci.sh plus the network-dependent Google render
+./scripts/bench.sh         # Release perf sample; BENCH.md records the results
 ./scripts/build-icons.sh   # compiles Assets.car and UrFonts.icns from design/icon
 ./scripts/build-app.sh     # assembles build/Ur Fonts.app (ad-hoc signed)
 open "build/Ur Fonts.app"

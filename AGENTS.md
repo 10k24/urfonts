@@ -497,6 +497,9 @@ Planned. Nothing in this section is implemented yet.
 - `CHANGELOG.md` records notable user-visible changes under `Unreleased`, grouped
   as Added, Changed, Fixed or Removed. Use release dates only when a version is
   tagged.
+- `BENCH.md` records the method, environment and raw numbers from a Release run.
+  Never add a number that was not measured, and re-measure before trusting an
+  old row.
 - `AGENTS.md` is the canonical record of invariants and measurement rules. Other
   docs link to its budgets instead of copying numbers.
 - `OPEN_ISSUES.md` is a kanban; its heading is the only state marker.
@@ -530,13 +533,13 @@ Sources/UrFonts              SwiftUI app, MainActor by default
   Sidebar/ Browser/ FontPage/ Providers/ Components/ Spikes/
                              (Info, Windows planned)
 Sources/urfonts-cli          index, search, folders, activation, headless
-BENCH.md                     planned: competitor and regression measurements
+BENCH.md                     Release measurements, method and raw numbers
 Tests/UrFontsCoreTests       parser, scanner, catalog, activation with fakes
 Tests/UrFontsSnapshotTests   planned: ImageRenderer golden images
 macos/                       Info.plist
 Resources/                   planned: character sets, language data
 scripts/                     build-icons.sh, build-app.sh, ci.sh, test.sh,
-                             register-spike.sh (release scripts planned)
+                             bench.sh, register-spike.sh (release scripts planned)
 design/icon/                 Icon Composer source plus legacy 1024 PNG
 tools/                       fixture generator
 docs/                        ARCHITECTURE.md
@@ -606,6 +609,9 @@ Measured on the large fixture library. These are gates, not aspirations.
   is not enforced yet; existing outliers are fixed as files are touched.
 - Swift 6.2, strict concurrency. `UrFontsCore` types are `Sendable`; mutable
   stores and engines are actors. The app target defaults to `MainActor`.
+- Code must compile with the oldest supported toolchain (Swift 6.2), not only the
+  local Xcode. Swift 6.4 accepts `CFError as NSError`; 6.2 does not. Prefer CF
+  APIs that need no bridge, such as `CFErrorCopyUserInfo`.
 - `camelCase` functions and properties, `PascalCase` types, lower-case file names
   grouped by module.
 - Prefer `let`, early returns, and explicit optionals. No force unwrap on paths
