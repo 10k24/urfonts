@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest a workflow, font capability, or performance improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project is macOS only for now and keeps font files read-only. Read
+        `AGENTS.md` for the non-goals before proposing a change.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Library or indexing
+        - Browser or preview
+        - Activation
+        - Collections or samples
+        - Warnings
+        - Settings or import/export
+        - Google Fonts
+        - CLI or automation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and where does the current app get in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: scale
+    attributes:
+      label: Library scale
+      description: Roughly how many fonts do you manage, and where do they live?
+      placeholder: "e.g. 20,000 fonts in Dropbox and local folders"

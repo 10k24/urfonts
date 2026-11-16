@@ -22,6 +22,7 @@ swift build
 swift test
 ./scripts/ci.sh            # deterministic gate
 ./scripts/test.sh          # ci.sh plus the network Google render
+./scripts/bench.sh         # Release performance sample
 ./scripts/build-app.sh     # build/Ur Fonts.app, ad-hoc signed
 open "build/Ur Fonts.app"
 ```
@@ -38,7 +39,8 @@ CI runs `scripts/ci.sh` on a GitHub-hosted macOS runner. That script covers:
 
 - `swift test`
 - a Release build
-- a generated fixture library plus the CLI index, stats and search round trip
+- a 23,000-font generated fixture, a cold index under 30 s, CLI stats and search
+- a search p99 under 16 ms
 - headless scenarios that prove the process never takes focus
 - app bundle assembly
 
@@ -106,6 +108,19 @@ leaves it out.
 - Match the surrounding style. Do not reformat unrelated code.
 - By contributing, you agree that your contribution is licensed under
   Apache-2.0, the license in `LICENSE`.
+
+## Versioning
+
+- Versions follow Semantic Versioning. Before 1.0, minor releases may include
+  breaking changes; patch releases stay compatible.
+- Tags are `vMAJOR.MINOR.PATCH`. `CFBundleShortVersionString` matches the tag and
+  `CFBundleVersion` increments for every build.
+- `CHANGELOG.md` keeps changes under `Unreleased` until a tag, then moves them to
+  a version heading with the release date.
+- The settings export has its own schema version in `LibraryConfiguration`.
+  Bump it when the JSON shape changes, accept older files, and reject newer ones
+  with a readable message.
+- Database migrations are append-only. Never edit a migration that has shipped.
 
 ## Support policy
 

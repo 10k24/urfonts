@@ -53,9 +53,10 @@ Locked decisions:
 - **Slider debounce check.** Confirm the size slider is smooth with derived
   fonts on the full library in a real window; add debounce only if a
   measurement shows it is needed.
-- **Scroll and RSS budget.** Offscreen row-step p99 is above the 8.3 ms budget and
-  peak RSS is above 300 MB (see `BENCH.md`). Measure a real window with signposts
-  and steady-state RSS, then fix the cause rather than relaxing the budget.
+- **Scroll and RSS budget.** Offscreen row-step p99 is above the 8.3 ms budget;
+  median scroll RSS is under 300 MB but the p95 crosses it (see `BENCH.md`).
+  Measure a real window with signposts, then fix the cause rather than relaxing
+  the budget.
 
 ### Phase 3 - Activation
 
@@ -169,11 +170,10 @@ a font.
 
 - **Repo hygiene.** No trial libraries, font files, generated build artifacts or
   signing secrets in git. Confirm Apache-2.0 and NOTICE.
-- **Bench gate.** Index, search and scroll budgets from `AGENTS.md` fail the
-  build when exceeded.
+- **Scroll and grid bench gate.** Wire real-window signpost measurements for the
+  list p99 and grid frame-rate budgets.
 - **Performance run.** Measure warm launch, scroll p50/p99, search, activation
   and RSS in Release on the real library. Record method and raw numbers.
-- **Release process docs.** Issue and PR templates plus a versioning policy.
 - **Release automation.** Reproducible DMG, signing/notarization workflow and
   Sparkle appcast.
 
@@ -417,6 +417,10 @@ features are listed too, so the gap is explicit rather than implied.
 - **Bench harness.** `--headless bench` times snapshot load and the search
   rebuild; `scripts/bench.sh` times a cold fixture index and row scrolling;
   `BENCH.md` records the method, environment and raw numbers.
+- **Index and search gate.** `scripts/ci.sh` fails when the full fixture cold
+  index exceeds 30 s or search p99 exceeds 16 ms.
+- **Release templates.** Bug and feature issue forms, a pull request checklist
+  and a versioning policy.
 - **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
   by `--headless list-spike`; the real browser re-measures in Phase 2.
 - **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`

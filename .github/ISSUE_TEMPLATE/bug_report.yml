@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a crash, wrong behavior, or a font that will not activate.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach font files you do not have permission to share. A font name
+        and a table dump are usually enough. Check `OPEN_ISSUES.md` before filing.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.6"
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Ur Fonts version
+      placeholder: "0.1 (1)"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Library scan
+        - Browser or preview
+        - Activation
+        - Collections or samples
+        - Warnings
+        - Settings
+        - Google Fonts
+        - CLI or headless
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add ...
+        2. Activate ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or artifacts
+      description: Relevant log excerpt or a headless artifact path. Do not paste a whole library dump.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Checklist
+      options:
+        - label: I did not attach font files I do not have permission to share.
+          required: true
+        - label: I checked for an existing issue or a matching entry in OPEN_ISSUES.md.
+          required: true

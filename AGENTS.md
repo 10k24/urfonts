@@ -456,9 +456,11 @@ These are the facts the design rests on. Verify before changing any of them.
 - Artifacts go to `$TMPDIR/urfonts-headless/<run>/`: log, JSON state, PNGs.
 - Unit and core tests use `swift test` and never launch the app.
 - CI runs `scripts/ci.sh` on `macos-15`; `scripts/test.sh` is the same gate plus
-  the network-dependent Google render. The image default Xcode predates Swift
-  6.2, so the workflow selects the latest stable Xcode first. `act` cannot
-  emulate macOS runners; validate workflow changes with `actionlint`.
+  the network-dependent Google render. The gate enforces the full-fixture
+  cold-index and search budgets; scroll and grid stay real-window measurements.
+  The image default Xcode predates Swift 6.2, so the workflow selects the latest
+  stable Xcode first. `act` cannot emulate macOS runners; validate workflow
+  changes with `actionlint`.
 - `AppModel` can be constructed before any `NSApplication` exists (the
   `ImageRenderer` path). Never touch `NSApp` from its initializer without a nil
   guard; `start()` applies the appearance once the app is up.

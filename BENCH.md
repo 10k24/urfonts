@@ -16,6 +16,9 @@ code change.
 ## Commands
 
 ```sh
+# Full scripted run against the real library (no indexing)
+./scripts/bench.sh --db "$HOME/Library/Application Support/Ur Fonts/library.sqlite3"
+
 # Snapshot load and synchronous search rebuild
 .build/release/UrFonts --headless bench
 
@@ -38,32 +41,33 @@ lower bound until a signpost run confirms it.
 | Measurement | Result | Budget | Status |
 |---|---|---|---|
 | Cold index, 23,000 files | 4.05 s | under 30 s | pass |
-| Snapshot load, real library | 853.7 ms | not a gate | — |
-| Search rebuild p50 | 5.98 ms | — | — |
-| Search rebuild p99 | 7.27 ms | under 16 ms | pass |
-| Scroll rows p50 | 6.48 ms | — | — |
-| Scroll rows p99 | 13.96 ms | under 8.3 ms | fail |
-| Scroll rows max | 14.46 ms | — | — |
-| Scroll rows peak RSS | 334.8 MiB | under 300 MB steady | fail |
+| Snapshot load, real library | 867.9 ms | not a gate | — |
+| Search rebuild p50 | 6.16 ms | — | — |
+| Search rebuild p99 | 6.70 ms | under 16 ms | pass |
+| Scroll rows p50 | 7.27 ms | — | — |
+| Scroll rows p99 | 11.27 ms | under 8.3 ms | fail |
+| Scroll rows max | 17.19 ms | — | — |
+| Scroll RSS p50 | 228.8 MiB | under 300 MB | pass |
+| Scroll RSS p95 | 342.0 MiB | under 300 MB | fail |
+| Scroll RSS max | 352.9 MiB | under 300 MB | fail |
 | Scroll jump p99 | 27.11 ms | — | stress |
-| Scroll jump peak RSS | 414.2 MiB | under 300 MB steady | — |
-
-First scroll pass on the same run: rows p50 6.93 ms, p99 11.64 ms, max 12.77 ms;
-jump p50 20.32 ms, p99 37.86 ms, max 65.08 ms. The second pass is recorded in the
-table because the first includes cold row creation.
+| Scroll jump peak RSS | 414.2 MiB | under 300 MB | — |
 
 ## Notes
 
 - Snapshot load is the database open plus the in-memory catalog build. It is not
   launch to first painted row, which still needs a signpost measurement in a real
   window.
-- Peak RSS is the whole process at its highest point during the run, including
-  AppKit and SwiftUI. The 300 MB budget is for steady RSS while scrolling; the
-  harness does not sample steady state yet.
+- RSS is sampled every 200 ms while the row scroll runs. The median stays under
+  the budget; the p95 and max show that allocation spikes still cross it. The
+  earlier peak-only sample recorded 334.8 MiB, which matches this range.
 - The row-step p99 misses the 8.3 ms budget in the offscreen harness. The harness
   itself fails only above 16 ms, and the jump stress mode fails that limit. Do
   not relax the budget without a real-window measurement and a reason in
   `AGENTS.md`.
 - Not measured yet: warm launch to first painted row, grid frame rate, single
-  file delta, one-family activation, and steady RSS. Activation has
+  file delta, one-family activation, and steady RSS under an actual drag. The
+  scroll sample is the closest current proxy; activation has
   `scripts/register-spike.sh` for a per-font registration sample.
+- CI enforces the cold-index and search budgets on the 23,000-font fixture. The
+  scroll and RSS rows stay local until a real-window signpost run exists.

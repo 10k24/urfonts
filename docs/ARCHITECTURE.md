@@ -143,11 +143,13 @@ and assert that the process never becomes active. They render real views
 offscreen with `ImageRenderer` or `NSHostingView` and write artifacts under the
 temporary directory.
 
-`scripts/ci.sh` is the deterministic gate: unit tests, Release build, fixture
-generation, CLI round trip, headless scenarios and bundle assembly. CI runs it on
-a macOS runner with a current Xcode. `scripts/test.sh` adds the network-dependent
-Google render locally. `act` cannot emulate macOS runners, so workflow changes
-are validated with `actionlint` and by running the gate directly.
+`scripts/ci.sh` is the deterministic gate: unit tests, Release build, a
+23,000-font fixture with a cold-index budget, a search p99 budget, headless
+scenarios and bundle assembly. CI runs it on a macOS runner with a current
+Xcode. `scripts/test.sh` adds the network-dependent Google render locally.
+`act` cannot emulate macOS runners, so workflow changes are validated with
+`actionlint` and by running the gate directly. Scroll and grid budgets still
+require a real-window signpost run.
 
 ## Packaging
 

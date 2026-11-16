@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deterministic gate: tests, Release build, fixtures, CLI round trip, headless
-# scenarios and bundle assembly. No network, no window server focus.
+# Deterministic gate: tests, Release build, full fixture, index/search budgets,
+# headless scenarios and bundle assembly. No network, no window server focus.
 # `scripts/test.sh` adds the network-dependent Google render on top.
 set -euo pipefail
 
@@ -15,13 +15,25 @@ bin="$(swift build -c release --show-bin-path)"
 work="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/urfonts-ci"
 mkdir -p "$work"
 
+fixture_count="${URFONTS_FIXTURE_COUNT:-23000}"
 swift run -c release FixtureGen \
-    --out "$work/fixtures" --count 2000 --subdirs 20
+    --out "$work/fixtures" --count "$fixture_count" --subdirs 100
 
 db="$(mktemp -t urfonts-ci-db)"
-"$bin/urfonts-cli" index "$work/fixtures" --db "$db"
+/usr/bin/time -p "$bin/urfonts-cli" index "$work/fixtures" --db "$db" \
+    >"$work/index.log" 2>"$work/index.time"
+grep "database:" "$work/index.log"
+cold_index="$(awk '/^real / {print $2}' "$work/index.time")"
+if ! awk -v seconds="$cold_index" 'BEGIN { exit !(seconds < 30) }'; then
+    echo "cold index ${cold_index}s exceeds the 30s budget" >&2
+    exit 1
+fi
+echo "cold index ${cold_index}s"
 "$bin/urfonts-cli" stats --db "$db"
 "$bin/urfonts-cli" search "Fixture" --db "$db" | grep -q "Fixture"
+
+# Search p99 must stay under 16 ms. The bench scenario enforces it.
+"$bin/UrFonts" --headless bench --db "$db"
 
 "$bin/UrFonts" --headless focus-check
 "$bin/UrFonts" --headless render
