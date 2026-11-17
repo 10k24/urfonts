@@ -470,16 +470,19 @@ public final class LibraryDatabase: Sendable {
     /// Marks previously indexed files that a cloud provider reports as
     /// online-only. Files that were never indexed are skipped without creating
     /// a row: they have no faces to show and are not a warning.
-    public func markCloudFiles(paths: [String]) throws {
-        guard !paths.isEmpty else { return }
+    public func markCloudFiles(paths: [String]) throws -> Int {
+        guard !paths.isEmpty else { return 0 }
         let now = Date().timeIntervalSince1970
-        try queue.write { db in
+        return try queue.write { db in
+            var updated = 0
             for path in paths {
                 try db.execute(
                     sql: "UPDATE file SET status = 'cloud', last_seen = ? WHERE path = ?",
                     arguments: [now, path]
                 )
+                updated += db.changesCount
             }
+            return updated
         }
     }
 
@@ -562,6 +565,23 @@ public final class LibraryDatabase: Sendable {
                 arguments: StatementArguments([folderID] + paths)
             )
             return Self.existingFiles(from: rows)
+        }
+    }
+
+    /// Paths already indexed under a subtree. A scoped reload uses this to
+    /// remove files that disappeared without walking the parent root.
+    public func filePaths(folderID: String, under path: String) throws -> [String] {
+        let prefix = path.hasSuffix("/") ? path : path + "/"
+        return try queue.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                    SELECT path FROM file
+                    WHERE folder_id = ?
+                      AND substr(path, 1, length(?)) = ?
+                    """,
+                arguments: [folderID, prefix, prefix]
+            )
         }
     }
 

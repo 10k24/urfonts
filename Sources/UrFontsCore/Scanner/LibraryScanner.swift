@@ -10,8 +10,19 @@ public struct ScanReport: Sendable, Equatable {
     public let failedFiles: Int
     public let skippedCloud: Int
     public let cloudErrors: Int
+    /// Existing indexed files that became online-only during this scan.
+    public let updatedCloudFiles: Int
     public let faces: Int
     public let seconds: Double
+
+    /// A scan with no changed rows does not need a full snapshot rebuild.
+    public var hasChanges: Bool {
+        newFiles > 0
+            || changedFiles > 0
+            || removedFiles > 0
+            || failedFiles > 0
+            || updatedCloudFiles > 0
+    }
 
     public var summary: String {
         let summary = String(
@@ -67,7 +78,7 @@ public actor LibraryScanner {
         }
         let candidates = enumeration.files
         let skippedCloud = enumeration.skippedCloud
-        try database.markCloudFiles(paths: Array(skippedCloud))
+        let updatedCloud = try database.markCloudFiles(paths: Array(skippedCloud))
 
         let currentVersion = FontFileParser.version
         var pending: [(url: URL, stamp: FileStamp)] = []
@@ -128,6 +139,7 @@ public actor LibraryScanner {
             failedFiles: failed,
             skippedCloud: skippedCloud.count,
             cloudErrors: cloudErrors,
+            updatedCloudFiles: updatedCloud,
             faces: parsed.reduce(0) { $0 + $1.faces.count },
             seconds: Date().timeIntervalSince(started)
         )
@@ -172,7 +184,9 @@ public actor LibraryScanner {
 
             var isDirectory: ObjCBool = false
             guard manager.fileExists(atPath: path, isDirectory: &isDirectory) else {
-                if existing[path] != nil { removed.append(path) }
+                if let known = existing[path], known.stamp.status != "missing" {
+                    removed.append(path)
+                }
                 continue
             }
             guard !isDirectory.boolValue else { continue }
@@ -203,7 +217,7 @@ public actor LibraryScanner {
         let parsed = outcomes.compactMap(\.file)
         let failed = outcomes.filter { $0.file == nil }.count
         let cloudErrors = outcomes.filter(\.cloudError).count
-        try database.markCloudFiles(paths: Array(skippedCloud))
+        let updatedCloud = try database.markCloudFiles(paths: Array(skippedCloud))
         try database.apply(
             folderID: folderID,
             parsed: parsed,
@@ -222,10 +236,51 @@ public actor LibraryScanner {
             failedFiles: failed,
             skippedCloud: skippedCloud.count,
             cloudErrors: cloudErrors,
+            updatedCloudFiles: updatedCloud,
             faces: parsed.reduce(0) { $0 + $1.faces.count },
             seconds: Date().timeIntervalSince(started)
         )
     }
+
+    /// Rescans one subtree inside an indexed root without walking the rest of
+    /// the library. Existing rows under the subtree are included so deleted
+    /// files are still removed.
+    public func scan(
+        subtree path: String,
+        folder url: URL,
+        kind: FolderKind = .staticFolder
+    ) async throws -> ScanReport {
+        let rootPath = canonicalPath(url.path)
+        let subtreePath = canonicalPath(path)
+        let folderID = try database.upsertFolder(path: rootPath, kind: kind)
+        var paths = Set(
+            try database.filePaths(folderID: folderID, under: subtreePath)
+        )
+        guard let subtreePaths = fontPaths(inSubtree: subtreePath) else {
+            throw ScanError.unreadableFolder
+        }
+        paths.formUnion(subtreePaths)
+        return try await scan(changes: Array(paths), folder: url, kind: kind)
+    }
+
+    private func fontPaths(inSubtree path: String) -> Set<String>? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: path),
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        var paths = Set<String>()
+        while let item = enumerator.nextObject() as? URL {
+            if fontExtensions.contains(item.pathExtension.lowercased()) {
+                paths.insert(canonicalPath(item.path))
+            }
+        }
+        return paths
+    }
+
+    // MARK: - Internals
 
     // MARK: - Internals
 

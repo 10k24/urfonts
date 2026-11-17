@@ -243,10 +243,10 @@ struct BrowserView: View {
             }
         } else {
             ToolbarItem(placement: .primaryAction) {
-                Button { Task { await model.rescanAll() } } label: {
-                    Label("Rescan", systemImage: "arrow.clockwise")
+                Button { Task { await model.rescanCurrentScope() } } label: {
+                    Label(model.rescanScopeTitle, systemImage: "arrow.clockwise")
                 }
-                .help("Rescan every folder")
+                .help(model.rescanScopeHelp)
             }
         }
         if model.selection != .problems {

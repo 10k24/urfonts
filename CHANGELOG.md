@@ -48,6 +48,8 @@ versions may change behavior.
 ### Changed
 
 - The development bundle is now `UrFonts.app`; the executable remains `UrFonts`.
+- Toolbar reload is scope-aware: folder and subfolder selections scan only that
+  scope, and unchanged scans skip the full snapshot rebuild.
 
 ### Fixed
 

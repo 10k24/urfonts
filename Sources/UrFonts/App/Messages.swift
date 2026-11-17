@@ -237,6 +237,31 @@ enum Messages {
         }
     }
 
+    enum Rescan {
+        static let folder = String(
+            localized: "rescan.folder",
+            defaultValue: "Rescan Folder",
+            comment: "Toolbar rescan for the selected folder"
+        )
+        static let all = String(
+            localized: "rescan.all",
+            defaultValue: "Rescan All",
+            comment: "Toolbar rescan with no folder selected"
+        )
+        static let allHelp = String(
+            localized: "rescan.all.help",
+            defaultValue: "Rescan every folder in the library",
+            comment: "Toolbar rescan help"
+        )
+        static func folderHelp(name: String) -> String {
+            String(
+                localized: "rescan.folder.help",
+                defaultValue: "Rescan \(name)",
+                comment: "Toolbar rescan help for a folder"
+            )
+        }
+    }
+
     enum About {
         static let menuItem = String(
             localized: "about.menuItem",

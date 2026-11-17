@@ -435,6 +435,8 @@ features are listed too, so the gap is explicit rather than implied.
   checkbox activates all preferred styles. Alternates are marked in the sheet.
   Placeholder name tables (`false`, `none`, …) are ignored, which removes the
   bogus Fontshare WEB families.
+- **Scoped reload.** The toolbar reload scans the selected folder or subfolder
+  only and skips the snapshot rebuild when the scan finds no changes.
 - **Repo hygiene.** No fonts, databases, signing material or generated icons are
   tracked; `scripts/ci.sh` rejects forbidden files.
 - **Real-window perf capture.** `scripts/perf-window.sh` records App Launch and

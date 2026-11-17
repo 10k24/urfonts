@@ -390,6 +390,10 @@ These are the facts the design rests on. Verify before changing any of them.
   delta scan of those paths only; a directory event triggers a folder scan. A
   five-minute sweep covers missed events. There is no event replay across app
   launches: the launch rescan is the recovery path.
+- The toolbar reload is scope-aware. A selected folder scans that root; a
+  selected subfolder scans only that subtree through `scan(subtree:)`; other
+  scopes keep the all-folders action. A scan with no changed rows skips the
+  snapshot rebuild entirely.
 - AppModel owns exactly one `LibraryScanner` actor. Watcher deltas, sweeps,
   rescans, folder adds, font adds and Google indexing all go through it. Never
   create a scanner per call: two actors can read the same pre-insert state and

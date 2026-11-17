@@ -290,6 +290,47 @@ struct LibraryTests {
         #expect(try database.problemFiles().isEmpty)
     }
 
+    @Test("scoped subtree scan removes only files under that subtree")
+    func subtreeScan() async throws {
+        let root = try makeLibrary(count: 0)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let keep = root.appendingPathComponent("Keep", isDirectory: true)
+        let drop = root.appendingPathComponent("Drop", isDirectory: true)
+        try FileManager.default.createDirectory(at: keep, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: drop, withIntermediateDirectories: true)
+
+        let keepSpec = MinimalFontSpec(index: 0)
+        let dropSpec = MinimalFontSpec(index: 1)
+        try MinimalFont.data(for: keepSpec)
+            .write(to: keep.appendingPathComponent("Keep.ttf"))
+        let dropURL = drop.appendingPathComponent("Drop.ttf")
+        try MinimalFont.data(for: dropSpec).write(to: dropURL)
+
+        let database = try LibraryDatabase(inMemory: true)
+        let scanner = LibraryScanner(database: database)
+        _ = try await scanner.scan(folder: root)
+        #expect(try database.counts().files == 2)
+
+        try FileManager.default.removeItem(at: dropURL)
+        let report = try await scanner.scan(
+            subtree: drop.path,
+            folder: root,
+            kind: .staticFolder
+        )
+        #expect(report.hasChanges)
+        #expect(report.removedFiles == 1)
+        #expect(try database.counts().files == 2)
+        #expect(try database.counts().missing == 1)
+        #expect(try database.folders().count == 1)
+
+        let again = try await scanner.scan(
+            subtree: drop.path,
+            folder: root,
+            kind: .staticFolder
+        )
+        #expect(!again.hasChanges)
+    }
+
     @Test("canonical paths resolve the /var firmlink")
     func canonicalPaths() {
         let path = FileManager.default.temporaryDirectory.path

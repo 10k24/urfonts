@@ -2089,6 +2089,7 @@ final class AppModel {
 
     func rescanAll() async {
         guard let database, let scanner else { return }
+        var changed = false
         for folder in folders {
             guard !isIgnored(folder.path) else { continue }
             status = "Scanning: \(folder.name)…"
@@ -2098,13 +2099,97 @@ final class AppModel {
                     kind: folder.kind
                 )
                 present(report)
+                changed = changed || report.hasChanges
             } catch {
                 report(error)
             }
         }
-        await reload()
-        folders = (try? database.folders()) ?? folders
-        await reconcileActivation()
+        if changed {
+            await reload()
+            folders = (try? database.folders()) ?? folders
+            await reconcileActivation()
+        } else {
+            status = "No changes"
+        }
+    }
+
+    /// Context-aware toolbar reload. A folder or subfolder reloads only that
+    /// subtree; scopes without a folder keep the all-folders action.
+    func rescanCurrentScope() async {
+        switch selection {
+        case .folder(let id):
+            guard let folder = folders.first(where: { $0.id == id }) else { return }
+            await rescan(folder: folder, subtree: nil)
+        case .subfolder(let path):
+            guard let root = owningFolder(for: path) else { return }
+            await rescan(folder: root, subtree: path)
+        default:
+            await rescanAll()
+        }
+    }
+
+    private func rescan(folder: LibraryFolder, subtree: String?) async {
+        guard let database, let scanner else { return }
+        let label = subtree.map {
+            ($0 as NSString).lastPathComponent
+        } ?? folder.name
+        status = "Scanning: \(label)…"
+        do {
+            let report: ScanReport
+            if let subtree {
+                report = try await scanner.scan(
+                    subtree: subtree,
+                    folder: URL(fileURLWithPath: folder.path),
+                    kind: folder.kind
+                )
+            } else {
+                report = try await scanner.scan(
+                    folder: URL(fileURLWithPath: folder.path),
+                    kind: folder.kind
+                )
+            }
+            present(report)
+            if report.hasChanges {
+                await reload()
+                folders = (try? database.folders()) ?? folders
+                await reconcileActivation()
+            } else {
+                status = "No changes"
+            }
+        } catch {
+            report(error)
+        }
+    }
+
+    private func owningFolder(for path: String) -> LibraryFolder? {
+        folders
+            .filter {
+                path == $0.path || LibraryPath.isInside(path, root: $0.path)
+            }
+            .max { $0.path.count < $1.path.count }
+    }
+
+    var rescanScopeTitle: String {
+        switch selection {
+        case .folder, .subfolder:
+            Messages.Rescan.folder
+        default:
+            Messages.Rescan.all
+        }
+    }
+
+    var rescanScopeHelp: String {
+        switch selection {
+        case .folder(let id):
+            let name = folders.first(where: { $0.id == id })?.displayPath ?? ""
+            return Messages.Rescan.folderHelp(name: name)
+        case .subfolder(let path):
+            return Messages.Rescan.folderHelp(
+                name: (path as NSString).lastPathComponent
+            )
+        default:
+            return Messages.Rescan.allHelp
+        }
     }
 
     // MARK: - Visible rows
