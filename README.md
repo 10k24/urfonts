@@ -100,8 +100,7 @@ urfonts-cli google-download Inter
 
 ## Who
 
-Built by [Shakeel Mohamed](https://shakeel.design) at
-[10k24](https://10k24.com), a Los Angeles design studio.
+Built by [Shakeel Mohamed](https://shakeel.design) at [10k24 Studio](https://10k24.com).
 
 ## License
 
