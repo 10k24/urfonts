@@ -9,3 +9,5 @@ DerivedData/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+macos/Assets.car
+macos/UrFonts.icns

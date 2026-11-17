@@ -481,9 +481,12 @@ Planned. Nothing in this section is implemented yet.
 ### Packaging
 
 - SwiftPM executable plus `scripts/build-app.sh`. No Xcode project.
-- Bundle is `URFonts.app`; executable is `UrFonts`; bundle ID
-  `com.10k24.urfonts`. The dev build script assembles `build/URFonts.app` and
-  ad-hoc signs it; notarization comes at release.
+- Bundle is `UrFonts.app`; executable is `UrFonts`; bundle ID
+  `com.10k24.urfonts`. The dev build script assembles `build/UrFonts.app` and
+  ad-hoc signs it; notarization comes at release. Local bundles get a timestamp
+  `CFBundleVersion` and a development stamp in About; release builds set
+  `URFONTS_BUILD_NUMBER`. Generated `Assets.car` and `UrFonts.icns` live in
+  `macos/`, are ignored by git, and are rebuilt by `build-app.sh` when missing.
 - A bare SwiftPM binary launches as `BackgroundOnly`; always package the bundle
   before judging activation, menus or focus.
 - Developer ID, hardened runtime, notarized. GRDB is the only dependency today;
@@ -499,6 +502,8 @@ Planned. Nothing in this section is implemented yet.
   module boundary, schema, command surface or data path changes.
 - `docs/RELEASING.md` covers version bumps, signing, notarization and publishing.
   Update it when the release process or credentials change.
+- `docs/PERF.md` is the real-window measurement protocol. Update it when the
+  Instruments workflow or scripts change.
 - `CONTRIBUTING.md` covers setup, the gate, style and support policy. Update it
   when requirements, scripts or review rules change.
 - `CHANGELOG.md` records notable user-visible changes under `Unreleased`, grouped
@@ -546,10 +551,10 @@ Tests/UrFontsSnapshotTests   planned: ImageRenderer golden images
 macos/                       Info.plist
 Resources/                   planned: character sets, language data
 scripts/                     build-icons.sh, build-app.sh, make-dmg.sh, ci.sh,
-                             test.sh, bench.sh, register-spike.sh
+                             test.sh, bench.sh, perf-window.sh, register-spike.sh
 design/icon/                 Icon Composer source plus legacy 1024 PNG
 tools/                       fixture generator
-docs/                        ARCHITECTURE.md, RELEASING.md
+docs/                        ARCHITECTURE.md, PERF.md, RELEASING.md
 CONTRIBUTING.md              setup, gate, style, support policy
 CHANGELOG.md                 Keep a Changelog, Unreleased until first release
 README.md                    user-facing overview and data locations

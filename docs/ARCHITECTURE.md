@@ -155,7 +155,7 @@ require a real-window signpost run.
 
 ## Packaging
 
-`scripts/build-app.sh` assembles `build/URFonts.app` around the Release binary,
+`scripts/build-app.sh` assembles `build/UrFonts.app` around the Release binary,
 copies `Info.plist` and icon assets, and ad-hoc signs the bundle for development.
 The bundle identifier is `com.10k24.urfonts`. A bare SwiftPM binary launches as
 background-only; the bundle is required for menus, focus and activation.

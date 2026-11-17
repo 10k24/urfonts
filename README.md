@@ -86,6 +86,12 @@ expensive part.
 - Collections, sorted alphabetically, with create/rename/delete, add/remove from a
   family, and Activate All / Deactivate All from the collection menu.
 - Named preview samples (⌘E) with text, size and colors.
+- In-app help (⌘?) covering the library, activation, previews, warnings, Google
+  Fonts and known limits.
+- About panel with the 10k24 Studio credit, version, copyright and a link to the
+  GitHub repository.
+- First-run guidance explaining the read-only model, adding a folder and global
+  activation.
 - Appearance setting in Settings (⌘,) for System, Light or Dark. The choice is
   remembered across launches and applies to every window, panel and menu.
 - System fonts visible by default, hideable from Filters; Apple's leading `.`
@@ -116,10 +122,11 @@ swift test
 ./scripts/ci.sh            # tests, fixtures, headless scenarios, Release bundle
 ./scripts/test.sh          # ci.sh plus the network-dependent Google render
 ./scripts/bench.sh         # Release perf sample; BENCH.md records the results
-./scripts/make-dmg.sh      # build/URFonts-<version>.dmg; see docs/RELEASING.md
+./scripts/perf-window.sh   # Instruments capture for real-window perf
+./scripts/make-dmg.sh      # build/UrFonts-<version>.dmg; see docs/RELEASING.md
 ./scripts/build-icons.sh   # compiles Assets.car and UrFonts.icns from design/icon
-./scripts/build-app.sh     # assembles build/URFonts.app (ad-hoc signed)
-open "build/URFonts.app"
+./scripts/build-app.sh     # assembles build/UrFonts.app (ad-hoc signed)
+open "build/UrFonts.app"
 ```
 
 The app stores its library at
@@ -132,8 +139,9 @@ The app stores its library at
   samples and ignored folder paths.
 - **App preferences:** `~/Library/Preferences/com.10k24.urfonts.plist`.
   Appearance (`urfonts.appearance`: `system`, `light` or `dark`), system-font
-  visibility (`urfonts.showSystemFonts`) and file-name fallback
-  (`urfonts.fallbackFileNames`). Inspect with
+  visibility (`urfonts.showSystemFonts`), file-name fallback
+  (`urfonts.fallbackFileNames`) and first-run completion
+  (`urfonts.hasSeenWelcome`). Inspect with
   `defaults read com.10k24.urfonts`.
 - **Google Fonts downloads:** `~/Library/Application Support/Ur Fonts/GoogleFonts`
   (catalog cache, TTF files and licenses).

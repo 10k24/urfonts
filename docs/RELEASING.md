@@ -10,8 +10,9 @@ This checklist covers a signed release. Development builds only need
 2. Run `./scripts/test.sh` once with network access for the Google render.
 3. Run `./scripts/bench.sh` on the real library and update `BENCH.md` if the
    numbers moved.
-4. Bump `CFBundleShortVersionString` and increment `CFBundleVersion` in
-   `macos/Info.plist`.
+4. Bump `CFBundleShortVersionString` in `macos/Info.plist`. Set
+   `URFONTS_BUILD_NUMBER` when building the release; local builds get a
+   timestamp automatically.
 5. Move `CHANGELOG.md` entries from `Unreleased` to a version heading with the
    release date.
 6. Confirm `LICENSE` and `NOTICE` are current.
@@ -43,16 +44,16 @@ NOTARY_PROFILE="urfonts-notary" \
 ```
 
 The script builds the bundle, re-signs it with the hardened runtime, creates
-`build/URFonts-<version>.dmg`, verifies the image, submits it to the notary
+`build/UrFonts-<version>.dmg`, verifies the image, submits it to the notary
 service, and staples the ticket. Development runs without those variables stay
 ad-hoc signed and are not suitable for distribution.
 
 ## Verify
 
 ```sh
-spctl --assess --type execute --verbose "build/URFonts.app"
-xcrun stapler validate "build/URFonts-<version>.dmg"
-hdiutil attach "build/URFonts-<version>.dmg" -nobrowse
+spctl --assess --type execute --verbose "build/UrFonts.app"
+xcrun stapler validate "build/UrFonts-<version>.dmg"
+hdiutil attach "build/UrFonts-<version>.dmg" -nobrowse
 ```
 
 Open the mounted app on a clean macOS account, activate one local font and one
@@ -67,7 +68,9 @@ Google Fonts download, and confirm the library loads from a fresh database.
 
 ## Not ready
 
-- Sparkle is not integrated. The updater framework, appcast and signing keys are
-  release work; do not advertise automatic updates until they exist.
+- A Developer ID Application certificate and an Apple Developer Program
+  membership are required before this checklist can run.
+- Sparkle is not integrated. The updater framework, appcast and EdDSA keys are
+  deferred until there is a distribution feed and key management.
 - There is no automated release workflow yet. The signed-DMG steps above are
   manual and must run on a machine with the Developer ID identity.

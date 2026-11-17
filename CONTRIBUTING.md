@@ -23,8 +23,8 @@ swift test
 ./scripts/ci.sh            # deterministic gate
 ./scripts/test.sh          # ci.sh plus the network Google render
 ./scripts/bench.sh         # Release performance sample
-./scripts/build-app.sh     # build/URFonts.app, ad-hoc signed
-open "build/URFonts.app"
+./scripts/build-app.sh     # build/UrFonts.app, ad-hoc signed
+open "build/UrFonts.app"
 ```
 
 A bare SwiftPM binary launches as a background-only process. Use the app bundle
@@ -42,6 +42,7 @@ CI runs `scripts/ci.sh` on a GitHub-hosted macOS runner. That script covers:
 - a 23,000-font generated fixture, a cold index under 30 s, CLI stats and search
 - a one-file delta under 50 ms
 - a search p99 under 16 ms
+- a hygiene check for font, database and signing files in the tree
 - headless scenarios that prove the process never takes focus
 - app bundle assembly
 

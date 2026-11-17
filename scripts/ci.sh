@@ -7,6 +7,24 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# Repo hygiene: generated fonts, databases and signing material never belong in
+# the tree. Generated icon artifacts are rebuilt by build-app.sh.
+forbidden="$(find . \
+    -path ./.git -prune -o \
+    -path ./.build -prune -o \
+    -path ./build -prune -o \
+    -type f \( \
+        -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' -o \
+        -iname '*.otc' -o -iname '*.dfont' -o \
+        -name '.env' -o -name '*.p12' -o -name '*.p8' -o \
+        -name '*.cer' -o -name '*.pem' -o -name '*.key' -o \
+        -name '*.mobileprovision' -o -name '*.provisionprofile' \
+    \) -print -quit)"
+if [ -n "$forbidden" ]; then
+    echo "repo hygiene: forbidden file in the tree: $forbidden" >&2
+    exit 1
+fi
+
 swift test
 swift build -c release
 
@@ -51,6 +69,8 @@ fi
 "$bin/UrFonts" --headless render
 "$bin/UrFonts" --headless list-spike
 "$bin/UrFonts" --headless settings
+"$bin/UrFonts" --headless help
+"$bin/UrFonts" --headless welcome
 
 # Two real system fonts keep these independent of the user's library.
 fonts=()
@@ -66,4 +86,4 @@ if [ "${#fonts[@]}" -eq 2 ]; then
 fi
 
 ./scripts/build-app.sh >/dev/null
-test -x "build/URFonts.app/Contents/MacOS/UrFonts"
+test -x "build/UrFonts.app/Contents/MacOS/UrFonts"

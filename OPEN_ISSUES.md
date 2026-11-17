@@ -19,7 +19,7 @@ Locked decisions:
 
 | Decision | Value |
 |---|---|
-| Display name | Ur Fonts, bundle `URFonts.app` |
+| Display name | Ur Fonts, bundle `UrFonts.app` |
 | Bundle ID | `com.10k24.urfonts` |
 | Deployment | macOS 15.0+ |
 | License | Apache-2.0, NOTICE for MIT-derived code |
@@ -127,18 +127,16 @@ under 16 ms at full scale.
 
 ### Phase 10 - Ship
 
-- **Bundle.** `scripts/build-app.sh` assembles `URFonts.app` with Info.plist
+- **Bundle.** `scripts/build-app.sh` assembles `UrFonts.app` with Info.plist
   document types, icon, hardened runtime, Sparkle framework.
 - **Release.** Sign, notarize, staple, DMG, appcast.
 - **Homebrew cask.**
-- **Help and docs.** In-app help, first run, activation semantics and known
-  limits before launch.
 - **Donation option.** Add a Buy Me a Coffee (or equivalent) link to the README,
   the About panel, and the first release notes.
 - **Manual-use gate.** Launch only after several weeks of the author using it as
   the daily manager, with the core workflows holding up on the real library.
 
-Gate: notarized `URFonts.app` launches on a clean macOS 15 account and activates
+Gate: notarized `UrFonts.app` launches on a clean macOS 15 account and activates
 a font.
 
 ### Cross-cutting
@@ -154,8 +152,6 @@ a font.
     the macOS mask; the system applies a rounded rectangle.
   - In `design/icon/UrFonts.icon`, keep the background full-bleed and opaque.
     Do not bake corners, borders or shadows into layers.
-  - Design explicit Default, Dark, Tinted and Mono appearances in Icon Composer;
-    do not rely on auto-generated variants.
   - Keep the legacy `design/icon/legacy/icon-1024.png` as the Big Sur rounded
     square with the standard 824 px body, 100 px margin and baked shadow.
   - Check the mark at Dock sizes 16, 32, 64, 128 and 512 px on light and dark
@@ -166,15 +162,13 @@ a font.
 
 ### Open Source Gate
 
-- **Repo hygiene.** No trial libraries, font files, generated build artifacts or
-  signing secrets in git. Confirm Apache-2.0 and NOTICE.
 - **Scroll and grid bench gate.** Wire real-window signpost measurements for the
   list p99 and grid frame-rate budgets.
 - **Performance run.** Measure warm launch to first paint, real-window scroll,
   grid frame rate, activation and steady RSS in Release on the real library.
   Index, delta and search budgets are already gated in CI.
-- **Release automation.** Run the signed and notarized release, integrate Sparkle
-  and publish the appcast.
+- **Release automation.** Run the signed and notarized release once a Developer
+  ID certificate is available.
 
 ### FontBase parity verification
 
@@ -302,6 +296,18 @@ features are listed too, so the gap is explicit rather than implied.
 - **FontBase handoff notes.** Document deactivating all fonts in FontBase,
   quitting it, and ignoring its cache folder in Ur Fonts before activating the
   same fonts, to avoid duplicate PostScript registrations.
+- **OTF and TTF for the same font.** A family can ship as both CFF `.otf` and
+  TrueType `.ttf` with the same style. Decide the product rule before adding
+  special cases: group them as one selectable face, prefer one format, or list
+  both. If one is preferred, make the choice deterministic and visible (outline
+  format, file age, folder, or an explicit user choice). Keep activation,
+  collections and the journal keyed by file path. If both files are active,
+  fontd may hold two registrations; detect that and warn before activating the
+  second. This is separate from the duplicate PostScript warning because the
+  names can differ.
+- **Sparkle updates.** In-app update framework, hosted appcast and EdDSA key
+  management. Deferred until there is a distribution feed and a way to hold the
+  signing key outside the repo.
 
 ## Needs Verification
 
@@ -422,10 +428,23 @@ features are listed too, so the gap is explicit rather than implied.
 - **Release templates.** Bug and feature issue forms, a pull request checklist
   and a versioning policy.
 - **Release DMG.** `scripts/make-dmg.sh` builds and verifies
-  `build/URFonts-<version>.dmg` and optionally signs and notarizes it;
+  `build/UrFonts-<version>.dmg` and optionally signs and notarizes it;
   `docs/RELEASING.md` is the release checklist.
 - **App icon artwork.** New UR mark from the flattened Icon Composer export,
-  compiled into `Assets.car` and `UrFonts.icns`.
+  compiled into `Assets.car` and `UrFonts.icns`. Explicit default, dark and
+  tinted fills in `icon.json`; `Assets.car` exposes Aqua, DarkAqua and tintable
+  renditions.
+- **Help and first run.** ⌘? help window and a one-time welcome sheet covering
+  read-only files, adding a folder and global activation.
+- **About panel.** Studio byline, version, build number, copyright and a
+  repository link in the standard macOS About panel; local builds also show a
+  development timestamp.
+- **Repo hygiene.** No fonts, databases, signing material or generated icons are
+  tracked; `scripts/ci.sh` rejects forbidden files.
+- **Real-window perf capture.** `scripts/perf-window.sh` records App Launch and
+  Animation Hitches traces; `docs/PERF.md` defines the protocol.
+- **In-app help.** A ⌘? Help window covers the library, activation, previews,
+  warnings, Google Fonts and known limits; `--headless help` renders it.
 - **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
   by `--headless list-spike`; the real browser re-measures in Phase 2.
 - **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`
@@ -448,7 +467,7 @@ features are listed too, so the gap is explicit rather than implied.
 - **Browser snapshot.** `--headless browser` renders the real window offscreen,
   asserts it never activates, and writes a PNG.
 - **App bundle.** `scripts/build-app.sh` assembles and ad-hoc signs
-  `build/URFonts.app` so the app launches as a normal foreground app.
+  `build/UrFonts.app` so the app launches as a normal foreground app.
 - **Sidebar selection.** All Fonts and folders use a real selection enum, so
   every row selects and highlights.
 - **Footer layout.** Detail content and the status bar are a pinned VStack; the

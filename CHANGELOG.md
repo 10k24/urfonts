@@ -25,6 +25,12 @@ versions may change behavior.
 - Collections with create, rename, delete and bulk activation, always sorted
   alphabetically.
 - Saved preview samples with text, size and colors.
+- In-app help window (⌘?) covering library behavior, activation, previews,
+  warnings, Google Fonts and known limits.
+- About panel with the 10k24 Studio credit and a repository link. Local builds
+  show a development timestamp and a timestamp build number.
+- First-run welcome sheet explaining the read-only model, adding a folder and
+  global activation.
 - Warnings for duplicate PostScript names and missing files.
 - Google Fonts host with inline subset previews, per-style downloads, license
   labels and the same activation controls as local fonts.
@@ -41,7 +47,7 @@ versions may change behavior.
 
 ### Changed
 
-- The development bundle is now `URFonts.app`; the executable remains `UrFonts`.
+- The development bundle is now `UrFonts.app`; the executable remains `UrFonts`.
 
 ### Fixed
 

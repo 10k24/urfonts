@@ -43,6 +43,10 @@ enum Headless {
             exit(ignoreFolder())
         case "settings":
             exit(settings())
+        case "help":
+            exit(help())
+        case "welcome":
+            exit(welcome())
         case "google-detail":
             exit(googleDetail())
         default:
@@ -578,6 +582,99 @@ enum Headless {
             logger.check(FileManager.default.fileExists(atPath: url.path), "wrote settings.png")
         } else {
             logger.check(false, "encoded settings.png")
+        }
+        logger.check(!app.isActive, "still not active")
+        window.orderOut(nil)
+        return logger.finish()
+    }
+
+    private static func welcome() -> Int32 {
+        let logger = Logger(name: "welcome")
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 540),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+        window.contentView = NSHostingView(
+            rootView: WelcomeView(addFolder: {}, done: {})
+        )
+        window.orderBack(nil)
+        window.displayIfNeeded()
+
+        let settle = Date().addingTimeInterval(0.5)
+        while Date() < settle {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        window.displayIfNeeded()
+
+        guard let content = window.contentView,
+              let representation = content.bitmapImageRepForCachingDisplay(
+                in: content.bounds
+              ) else {
+            logger.check(false, "captured welcome")
+            window.orderOut(nil)
+            return logger.finish()
+        }
+        content.cacheDisplay(in: content.bounds, to: representation)
+        if let png = representation.representation(using: .png, properties: [:]) {
+            let url = logger.directory.appendingPathComponent("welcome.png")
+            try? png.write(to: url)
+            logger.check(
+                FileManager.default.fileExists(atPath: url.path),
+                "wrote welcome.png"
+            )
+        } else {
+            logger.check(false, "encoded welcome.png")
+        }
+        logger.check(!app.isActive, "still not active")
+        window.orderOut(nil)
+        return logger.finish()
+    }
+
+    private static func help() -> Int32 {
+        let logger = Logger(name: "help")
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        app.finishLaunching()
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+        window.contentView = NSHostingView(rootView: HelpView())
+        window.orderBack(nil)
+        window.displayIfNeeded()
+
+        let settle = Date().addingTimeInterval(0.5)
+        while Date() < settle {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        window.displayIfNeeded()
+
+        guard let content = window.contentView,
+              let representation = content.bitmapImageRepForCachingDisplay(
+                in: content.bounds
+              ) else {
+            logger.check(false, "captured help")
+            window.orderOut(nil)
+            return logger.finish()
+        }
+        content.cacheDisplay(in: content.bounds, to: representation)
+        if let png = representation.representation(using: .png, properties: [:]) {
+            let url = logger.directory.appendingPathComponent("help.png")
+            try? png.write(to: url)
+            logger.check(FileManager.default.fileExists(atPath: url.path), "wrote help.png")
+        } else {
+            logger.check(false, "encoded help.png")
         }
         logger.check(!app.isActive, "still not active")
         window.orderOut(nil)

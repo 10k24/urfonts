@@ -39,7 +39,8 @@ touch build/fixtures/library/<file>.ttf
 
 `--headless scroll` measures an offscreen window. It includes layout and display
 but not the Core Animation commit a real window performs, so treat its p99 as a
-lower bound until a signpost run confirms it.
+lower bound until a signpost run confirms it. The real-window protocol is in
+`docs/PERF.md`.
 
 ## Results
 

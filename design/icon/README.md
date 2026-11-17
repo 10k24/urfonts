@@ -1,11 +1,14 @@
 # App icon pipeline
 
-Two artifacts ship in `URFonts.app/Contents/Resources`:
+Two artifacts ship in `UrFonts.app/Contents/Resources`:
 
 | File | Used by | Source |
 |---|---|---|
 | `Assets.car` | macOS 26+ (light, dark, tinted, Liquid Glass) | `design/icon/UrFonts.icon` |
 | `UrFonts.icns` | macOS 15–25 (light only) | `design/icon/legacy/icon-1024.png` |
+
+Both are generated into `macos/` and ignored by git. `build-app.sh` runs
+`build-icons.sh` when they are missing.
 
 `Info.plist` sets `CFBundleIconName = UrFonts` and
 `CFBundleIconFile = UrFonts.icns`.
@@ -45,11 +48,13 @@ centered at 824 × 824 with a soft shadow, so it matches the Big Sur grid.
 You do not need a second design. In Icon Composer the same layer stack is
 annotated for Default (light), Dark and Mono:
 
-- Dark usually means a darker, slightly desaturated background and the same
-  foreground. Adjust the background layer's fill or opacity in the Dark
-  appearance.
-- Mono controls tinted and clear variants on macOS 26+. If it is not designed,
-  Icon Composer's default is acceptable.
+- Dark uses a darker background fill in the Dark appearance; the foreground mark
+  stays the same.
+- Tinted uses the Mono specializations and lets the system apply the user tint.
+- The current icon has explicit fill specializations for default, dark and
+  tinted. `Assets.car` exposes Aqua, DarkAqua and tintable renditions.
+- The background is intentionally opaque, so Clear mode has no separate
+  transparent design. A layered source is required to design one.
 - Preview both appearances in Icon Composer before saving. Do not export separate
   flattened PNGs for dark; the `.icon` carries both.
 

@@ -17,7 +17,7 @@ if [ -z "$version" ]; then
 fi
 
 ./scripts/build-app.sh >/dev/null
-app="build/URFonts.app"
+app="build/UrFonts.app"
 if [ ! -d "$app" ]; then
     echo "missing $app" >&2
     exit 1
@@ -29,11 +29,11 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
 fi
 
 staging="$(mktemp -d "${TMPDIR:-/tmp}/urfonts-dmg.XXXXXX")"
-ditto "$app" "$staging/URFonts.app"
+ditto "$app" "$staging/UrFonts.app"
 ln -s /Applications "$staging/Applications"
 
-dmg="build/URFonts-$version.dmg"
-hdiutil create -volname "URFonts" -srcfolder "$staging" \
+dmg="build/UrFonts-$version.dmg"
+hdiutil create -volname "UrFonts" -srcfolder "$staging" \
     -ov -format UDZO "$dmg" >/dev/null
 hdiutil verify "$dmg" >/dev/null
 

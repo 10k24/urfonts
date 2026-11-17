@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var model: AppModel
+    @AppStorage("urfonts.hasSeenWelcome") private var hasSeenWelcome = false
+    @State private var showWelcome = false
 
     init(model: AppModel = AppModel()) {
         _model = State(initialValue: model)
@@ -16,7 +18,30 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 900, minHeight: 600)
-        .task { await model.start() }
+        .task {
+            await model.start()
+            if !CommandLine.arguments.contains("--headless"), !hasSeenWelcome {
+                showWelcome = true
+            }
+        }
+        .sheet(isPresented: $showWelcome, onDismiss: {
+            hasSeenWelcome = true
+        }) {
+            WelcomeView(
+                addFolder: {
+                    hasSeenWelcome = true
+                    showWelcome = false
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(250))
+                        chooseFolder(using: model, watched: true)
+                    }
+                },
+                done: {
+                    hasSeenWelcome = true
+                    showWelcome = false
+                }
+            )
+        }
         .confirmationDialog(
             "Folder overlaps the library",
             isPresented: Binding(
