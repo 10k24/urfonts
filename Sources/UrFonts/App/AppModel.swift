@@ -214,7 +214,22 @@ final class AppModel {
     var coverageTotal = 0
     var isIndexingCoverage = false
     var samples: [SavedSample] = []
-    var selectedSampleID: String?
+    var selectedSampleID: String? {
+        didSet {
+            guard !CommandLine.arguments.contains("--headless") else { return }
+            if let selectedSampleID {
+                UserDefaults.standard.set(
+                    selectedSampleID,
+                    forKey: AppModel.selectedSampleKey
+                )
+            } else {
+                UserDefaults.standard.removeObject(
+                    forKey: AppModel.selectedSampleKey
+                )
+            }
+        }
+    }
+    private static let selectedSampleKey = "urfonts.selectedSampleID"
 
     var selectedSample: SavedSample? {
         guard let selectedSampleID else { return nil }
@@ -230,7 +245,7 @@ final class AppModel {
     }
 
     // Preview settings. Persisted later with the rest of the user data.
-    var sampleText = "Hamburgefonstiv"
+    var sampleText = "Hamburgerfontsiv"
     var sampleSize: Double = 42
     var textColor: Color = Color(nsColor: .labelColor)
     var backgroundColor: Color = Color(nsColor: .textBackgroundColor)
@@ -392,6 +407,7 @@ final class AppModel {
             refreshActive()
             refreshCoverage()
             samples = try database.samples()
+            restoreSelectedSample()
             folders = try database.folders()
             collections = try database.collections()
             rebuildCollectionCounts()
@@ -1209,6 +1225,20 @@ final class AppModel {
     }
 
     // MARK: - Saved samples
+
+    private func restoreSelectedSample() {
+        let stored = UserDefaults.standard.string(
+            forKey: AppModel.selectedSampleKey
+        )
+        guard let stored,
+              let sample = samples.first(where: { $0.id == stored }) else {
+            if selectedSampleID != nil {
+                selectedSampleID = nil
+            }
+            return
+        }
+        applySample(sample)
+    }
 
     func applySample(_ sample: SavedSample) {
         sampleText = sample.text
@@ -2319,35 +2349,7 @@ final class AppModel {
     }
 
     func representativeFace(for family: CatalogFamily) -> CatalogFace? {
-        let readable = snapshot.faces(in: family).filter { $0.fileStatus == "ok" }
-        guard !readable.isEmpty else { return nil }
-        let preferred = Set(family.preferredFaceIDs)
-        let scoped: [CatalogFace]
-        if let path = selectedFolderPath {
-            scoped = readable.filter { LibraryPath.isInside($0.path, root: path) }
-        } else {
-            scoped = []
-        }
-        let base = scoped.isEmpty ? readable : scoped
-        let pool = base.filter { preferred.contains($0.id) }
-        let candidates = pool.isEmpty ? base : pool
-        if let active = candidates.first(where: { activeFaceIDs.contains($0.id) }) {
-            return active
-        }
-        return candidates.first { !$0.isItalic && $0.weightClass == 400 }
-            ?? candidates.first { !$0.isItalic }
-            ?? candidates.first
-    }
-
-    private var selectedFolderPath: String? {
-        switch selection {
-        case .folder(let folderID):
-            return folders.first(where: { $0.id == folderID })?.path
-        case .subfolder(let subfolderPath):
-            return subfolderPath
-        default:
-            return nil
-        }
+        family.representativeFace(in: snapshot.faces(in: family))
     }
 
     private func familyIDs(forFolderPath path: String) -> Set<String> {

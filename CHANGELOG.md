@@ -24,7 +24,8 @@ versions may change behavior.
   feature tags, file paths and info.
 - Collections with create, rename, delete and bulk activation, always sorted
   alphabetically.
-- Saved preview samples with text, size and colors.
+- Saved preview samples with text, size and colors. The selected sample is
+  remembered across launches.
 - In-app help window (⌘?) covering library behavior, activation, previews,
   warnings, Google Fonts and known limits.
 - About panel with the 10k24 Studio credit and a repository link. Local builds
@@ -50,6 +51,9 @@ versions may change behavior.
 - The development bundle is now `UrFonts.app`; the executable remains `UrFonts`.
 - Toolbar reload is scope-aware: folder and subfolder selections scan only that
   scope, and unchanged scans skip the full snapshot rebuild.
+- Default preview text is `Hamburgerfontsiv`.
+- Export/import and the filename fallback moved from the preview popover to
+  Settings (⌘,).
 
 ### Fixed
 
@@ -57,6 +61,8 @@ versions may change behavior.
   collapse into one style with a preferred file; alternates remain visible but
   disabled. Placeholder name tables such as `false` no longer create fake
   families or block family activation.
+- Activating a family no longer changes its row preview. Representative faces
+  are chosen from files only, preferring the upright weight closest to 400.
 
 - Online-only cloud files are skipped without creating warning rows; previously
   indexed files that become online-only remain visible as unavailable.

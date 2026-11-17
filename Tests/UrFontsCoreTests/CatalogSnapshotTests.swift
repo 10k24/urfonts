@@ -39,6 +39,9 @@ struct CatalogSnapshotTests {
         #expect(family.preferredFaceIDs.contains("bold"))
         #expect(!family.preferredFaceIDs.contains("web"))
         #expect(!family.hasDuplicatePostScriptNames)
+        #expect(
+            family.representativeFace(in: snapshot.faces(in: family))?.id == "otf"
+        )
     }
 
     @Test("placeholder PostScript names do not become faces")

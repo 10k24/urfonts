@@ -81,7 +81,8 @@ Core directories:
   system-font visibility and file-name fallback. The README lists the exact keys.
 - Settings export is versioned JSON. It carries folders, collections (by
   PostScript name), samples, preview settings and ignored paths. A newer file is
-  rejected, never silently accepted.
+  rejected, never silently accepted. Export/import and the filename fallback live
+  in Settings, not the preview popover.
 
 ## Activation
 

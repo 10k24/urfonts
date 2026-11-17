@@ -32,8 +32,8 @@ published. Build from source with Xcode 26 or newer.
   library rows, never files.
 - Google Fonts under Hosts, with inline previews, per-style download and
   activation, and saved licenses.
-- Settings for appearance and ignored folders, plus versioned settings
-  export/import. In-app help, first-run guidance and an About panel.
+- Settings for appearance, filename fallback and ignored folders, plus versioned
+  settings export/import. In-app help, first-run guidance and an About panel.
 - Headless test modes that never take focus.
 
 Not there yet: favorites, tags, Quick Look, document preflight, font-cache repair
@@ -67,8 +67,8 @@ swift test
   Folders, files, faces, activation journal, collections, samples and ignored
   folder paths.
 - **App preferences:** `~/Library/Preferences/com.10k24.urfonts.plist`.
-  Appearance, system-font visibility, file-name fallback and first-run state.
-  Inspect with `defaults read com.10k24.urfonts`.
+  Appearance, system-font visibility, file-name fallback, first-run state and
+  the selected saved sample. Inspect with `defaults read com.10k24.urfonts`.
 - **Google Fonts:** `~/Library/Application Support/Ur Fonts/GoogleFonts` for
   downloads, catalog cache and licenses.
 - **Google host previews:** `~/Library/Caches/Ur Fonts/HostPreviews`. Safe to

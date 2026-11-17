@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 import UrFontsCore
 
 struct BrowserView: View {
@@ -251,32 +250,33 @@ struct BrowserView: View {
         }
         if model.selection != .problems {
             ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 4) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Search", text: $model.query)
-                        .textFieldStyle(.plain)
-                        .frame(width: 180)
-                    if !model.query.isEmpty {
-                        Button { model.query = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("Search", text: $model.query)
+                            .textFieldStyle(.plain)
+                            .frame(width: 180)
+                        if !model.query.isEmpty {
+                            Button { model.query = "" } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+
+                    Picker("View", selection: $model.viewMode) {
+                        Image(systemName: "list.bullet").tag(BrowserViewMode.list)
+                        Image(systemName: "square.grid.2x2").tag(BrowserViewMode.grid)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 90)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Picker("View", selection: $model.viewMode) {
-                    Image(systemName: "list.bullet").tag(BrowserViewMode.list)
-                    Image(systemName: "square.grid.2x2").tag(BrowserViewMode.grid)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 90)
             }
         }
         if model.selection != .googleFonts && model.selection != .problems {
@@ -555,23 +555,6 @@ struct PreviewSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Divider()
-
-            HStack(spacing: 8) {
-                Button("Export Settings…") { exportSettings(using: model) }
-                Button("Import Settings…") { importSettings(using: model) }
-            }
-            Text("Versioned JSON with folders, collections, samples and preview settings.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            Toggle("Use filename if font name missing", isOn: $model.fallbackFileNames)
-                .toggleStyle(.switch)
-            Text("Trial fonts sometimes report \".\" as their family name. This uses the file name instead.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(width: 340)
@@ -593,42 +576,6 @@ struct PreviewSettingsView: View {
         }
         .onAppear {
             previewTextFocused = true
-        }
-    }
-}
-
-@MainActor
-func exportSettings(using model: AppModel) {
-    FilePicker.shared.save(
-        title: "Export Settings",
-        name: LibraryConfiguration.fileName,
-        types: [.json]
-    ) { url in
-        do {
-            try model.exportSettings(to: url)
-        } catch {
-            model.report(error, context: "settings export")
-        }
-    }
-}
-
-@MainActor
-func importSettings(using model: AppModel) {
-    FilePicker.shared.open(
-        title: "Import Settings",
-        message: "Choose an Ur Fonts settings JSON file.",
-        prompt: "Import",
-        directories: false,
-        multiple: false,
-        types: [.json]
-    ) { urls in
-        guard let url = urls.first else { return }
-        Task { @MainActor in
-            do {
-                try await model.importSettings(from: url)
-            } catch {
-                model.report(error, context: "settings import")
-            }
         }
     }
 }

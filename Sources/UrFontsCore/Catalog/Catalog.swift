@@ -132,6 +132,35 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     public func previewText(userText: String) -> String {
         FontScript.previewText(mask: previewMask, userText: userText)
     }
+
+    /// Face used for a family row or sheet preview. Purely file-driven:
+    /// preferred style files, readable, upright, weight closest to 400, then
+    /// path. Activation state and sidebar selection are deliberately absent.
+    public func representativeFace(in faces: ArraySlice<CatalogFace>) -> CatalogFace? {
+        let readable = faces.filter { $0.fileStatus == "ok" }
+        guard !readable.isEmpty else { return nil }
+        let preferred = Set(preferredFaceIDs)
+        let preferredReadable: [CatalogFace]
+        if preferred.isEmpty {
+            preferredReadable = readable
+        } else {
+            let matching = readable.filter { preferred.contains($0.id) }
+            preferredReadable = matching.isEmpty ? readable : matching
+        }
+        let upright = preferredReadable.filter { !$0.isItalic }
+        let candidates = upright.isEmpty ? preferredReadable : upright
+        return candidates.min { left, right in
+            let leftDistance = abs(left.weightClass - 400)
+            let rightDistance = abs(right.weightClass - 400)
+            if leftDistance != rightDistance {
+                return leftDistance < rightDistance
+            }
+            if left.weightClass != right.weightClass {
+                return left.weightClass < right.weightClass
+            }
+            return left.path.localizedStandardCompare(right.path) == .orderedAscending
+        }
+    }
 }
 
 /// Immutable read model. Built from the database at launch, replaced whole on

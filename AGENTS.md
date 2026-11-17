@@ -93,9 +93,10 @@ These are the facts the design rests on. Verify before changing any of them.
   `undefined`, `untitled`, `nil`) are not faces. Fontshare WEB exports are the
   known case; filter them when building the snapshot so they cannot create a
   fake family or duplicate style groups.
-- The representative face prefers a preferred style file in the current folder
-  or subfolder, then an active face, then a regular face. Never select a missing
-  file for the row or sheet preview.
+- The representative face is file-driven only: preferred style file, readable,
+  upright, weight closest to 400, then path. It never consults activation state
+  or sidebar selection, so activating a family cannot change its preview. Never
+  select a missing file for the row or sheet preview.
 - Preview never registers anything. `CTFontManagerCreateFontDescriptorsFromURL`
   plus `CTFontCreateWithFontDescriptor` is enough, and it is process-local.
   Variable fonts return one descriptor per named instance, so dedupe descriptors;
@@ -284,7 +285,8 @@ These are the facts the design rests on. Verify before changing any of them.
 - A saved sample is a snapshot of preview text, size and colors. Selecting one
   applies it; Update overwrites the selected sample; Save as Sample always
   creates a new one. Dirty state compares the current settings to the selected
-  record, never to a shadow copy.
+  record, never to a shadow copy. The selected sample ID is remembered in
+  `urfonts.selectedSampleID`, so the preview returns to that text on relaunch.
 - A useful name must contain a letter or digit. Punctuation alone is not enough:
   some trial fonts use "." plus DEL or other control characters, which render as
   a bare dot. With the naming setting on, the snapshot substitutes the file

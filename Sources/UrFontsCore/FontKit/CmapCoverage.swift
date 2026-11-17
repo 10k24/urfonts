@@ -32,7 +32,7 @@ public enum FontScript: UInt64, CaseIterable, Sendable {
 
     public var sampleText: String {
         switch self {
-        case .latin: "Hamburgefonstiv"
+        case .latin: "Hamburgerfontsiv"
         case .greek: "Καλημέρα κόσμε"
         case .cyrillic: "Съешь ещё этих мягких булок"
         case .arabic: "أبجد هوز حطي كلمن"
