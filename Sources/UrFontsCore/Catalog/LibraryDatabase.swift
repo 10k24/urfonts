@@ -320,6 +320,18 @@ public final class LibraryDatabase: Sendable {
                 );
                 """)
         }
+        migrator.registerMigration("v11") { db in
+            // Online-only files that were never indexed have no faces and no
+            // browsable value. Drop the placeholder rows created by older
+            // scans; indexed files that become online-only stay.
+            try db.execute(sql: """
+                DELETE FROM file
+                WHERE status = 'cloud'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM face WHERE face.file_id = file.id
+                  )
+                """)
+        }
         try migrator.migrate(queue)
     }
 
@@ -455,24 +467,17 @@ public final class LibraryDatabase: Sendable {
         }
     }
 
-    /// Marks skipped cloud placeholders so Warnings can show them without
-    /// treating them as missing. Existing rows keep their faces and activation.
-    public func markCloudFiles(folderID: String, paths: [String]) throws {
+    /// Marks previously indexed files that a cloud provider reports as
+    /// online-only. Files that were never indexed are skipped without creating
+    /// a row: they have no faces to show and are not a warning.
+    public func markCloudFiles(paths: [String]) throws {
         guard !paths.isEmpty else { return }
         let now = Date().timeIntervalSince1970
         try queue.write { db in
             for path in paths {
                 try db.execute(
-                    sql: """
-                        INSERT INTO file (id, folder_id, path, size, mtime_ns,
-                            parse_version, face_count, status, first_seen, last_seen)
-                        VALUES (?, ?, ?, 0, 0, 0, 0, 'cloud', ?, ?)
-                        ON CONFLICT(path) DO UPDATE SET
-                            folder_id = excluded.folder_id,
-                            status = 'cloud',
-                            last_seen = excluded.last_seen
-                        """,
-                    arguments: [UUID().uuidString, folderID, path, now, now]
+                    sql: "UPDATE file SET status = 'cloud', last_seen = ? WHERE path = ?",
+                    arguments: [now, path]
                 )
             }
         }
@@ -534,23 +539,49 @@ public final class LibraryDatabase: Sendable {
                     """,
                 arguments: [folderID]
             )
-            var result: [String: ExistingFile] = [:]
-            result.reserveCapacity(rows.count)
-            for row in rows {
-                let path: String = row["path"]
-                result[path] = ExistingFile(
-                    id: row["id"],
-                    stamp: FileStamp(
-                        inode: row["inode"],
-                        size: row["size"],
-                        modifiedNs: row["mtime_ns"],
-                        parseVersion: row["parse_version"],
-                        status: row["status"]
-                    )
-                )
-            }
-            return result
+            return Self.existingFiles(from: rows)
         }
+    }
+
+    /// Stamps for specific paths only. A delta scan touches one file; loading
+    /// every row in the folder makes the 50 ms budget depend on library size.
+    public func existingFiles(
+        folderID: String,
+        paths: [String]
+    ) throws -> [String: ExistingFile] {
+        guard !paths.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: paths.count).joined(separator: ",")
+        return try queue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT id, path, inode, size, mtime_ns, parse_version, status
+                    FROM file
+                    WHERE folder_id = ? AND path IN (\(placeholders))
+                    """,
+                arguments: StatementArguments([folderID] + paths)
+            )
+            return Self.existingFiles(from: rows)
+        }
+    }
+
+    private static func existingFiles(from rows: [Row]) -> [String: ExistingFile] {
+        var result: [String: ExistingFile] = [:]
+        result.reserveCapacity(rows.count)
+        for row in rows {
+            let path: String = row["path"]
+            result[path] = ExistingFile(
+                id: row["id"],
+                stamp: FileStamp(
+                    inode: row["inode"],
+                    size: row["size"],
+                    modifiedNs: row["mtime_ns"],
+                    parseVersion: row["parse_version"],
+                    status: row["status"]
+                )
+            )
+        }
+        return result
     }
 
     // MARK: - Commit
@@ -994,7 +1025,7 @@ public final class LibraryDatabase: Sendable {
 
     /// Cheap counts for the sidebar badge. The full path list is loaded only
     /// when the Problems page opens.
-    public func problemCounts() throws -> (duplicates: Int, missing: Int, cloud: Int) {
+    public func problemCounts() throws -> (duplicates: Int, missing: Int) {
         try queue.read { db in
             let duplicates = try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM (
@@ -1009,11 +1040,7 @@ public final class LibraryDatabase: Sendable {
                 db,
                 sql: "SELECT COUNT(*) FROM file WHERE status NOT IN ('ok', 'cloud')"
             ) ?? 0
-            let cloud = try Int.fetchOne(
-                db,
-                sql: "SELECT COUNT(*) FROM file WHERE status = 'cloud'"
-            ) ?? 0
-            return (duplicates, missing, cloud)
+            return (duplicates, missing)
         }
     }
 
@@ -1064,7 +1091,7 @@ public final class LibraryDatabase: Sendable {
                 SELECT file.path, file.status,
                        (SELECT family_name FROM face WHERE file_id = file.id LIMIT 1)
                 FROM file
-                WHERE file.status != 'ok'
+                WHERE file.status NOT IN ('ok', 'cloud')
                 ORDER BY file.path
                 """)
             return rows.map { row in

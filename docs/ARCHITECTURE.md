@@ -49,7 +49,8 @@ Core directories:
    `LibraryPath.resolve`; the canonical path is the stored identity.
 2. `LibraryScanner` walks the root, skips ignored subtrees, and checks file
    provider metadata before opening anything. Online-only placeholders are
-   recorded with status `cloud` and never read.
+   skipped and counted; only files that were already indexed are marked
+   `cloud`.
 3. Changed files are parsed off the main actor, bounded by the active processor
    count. The main parse reads SFNT tables; CoreText supplies localized names and
    descriptors.
@@ -112,10 +113,11 @@ expensive and cloud folders can block.
 ## Cloud folders
 
 Dataless File Provider files and iCloud placeholders are detected before open.
-They are stored with status `cloud`, listed separately in Warnings, excluded from
-missing-file cleanup, and indexed normally once materialized. Timeouts and
-offline failures are classified by `CloudAccess` and surface as retryable cloud
-errors, never as damaged fonts.
+Files that were never indexed are skipped and counted, with no row and no
+warning. An indexed file that becomes online-only keeps its faces, is marked
+`cloud`, and shows as unavailable in the font sheet. Materialized files are
+indexed on the next scan. Timeouts and offline failures are classified by
+`CloudAccess` and surface as retryable cloud errors, never as damaged fonts.
 
 ## Google Fonts
 
@@ -144,16 +146,16 @@ offscreen with `ImageRenderer` or `NSHostingView` and write artifacts under the
 temporary directory.
 
 `scripts/ci.sh` is the deterministic gate: unit tests, Release build, a
-23,000-font fixture with a cold-index budget, a search p99 budget, headless
-scenarios and bundle assembly. CI runs it on a macOS runner with a current
-Xcode. `scripts/test.sh` adds the network-dependent Google render locally.
-`act` cannot emulate macOS runners, so workflow changes are validated with
-`actionlint` and by running the gate directly. Scroll and grid budgets still
+23,000-font fixture with cold-index and one-file delta budgets, a search p99
+budget, headless scenarios and bundle assembly. CI runs it on a macOS runner with
+a current Xcode. `scripts/test.sh` adds the network-dependent Google render
+locally. `act` cannot emulate macOS runners, so workflow changes are validated
+with `actionlint` and by running the gate directly. Scroll and grid budgets still
 require a real-window signpost run.
 
 ## Packaging
 
-`scripts/build-app.sh` assembles `build/Ur Fonts.app` around the Release binary,
+`scripts/build-app.sh` assembles `build/URFonts.app` around the Release binary,
 copies `Info.plist` and icon assets, and ad-hoc signs the bundle for development.
 The bundle identifier is `com.10k24.urfonts`. A bare SwiftPM binary launches as
 background-only; the bundle is required for menus, focus and activation.

@@ -87,21 +87,15 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     /// so collections survive an offline volume.
     public let missingFaceCount: Int
 
-    /// Files that are present but not downloaded from a cloud provider.
-    public let cloudFaceCount: Int
-
     public var faceCount: Int { faceRange.count }
 
     /// Display label for the family count. Duplicate groups read as files;
-    /// ordinary families read as styles. Missing and cloud files are explicit.
+    /// ordinary families read as styles. Missing files are explicit.
     public var countLabel: String {
         let unit = hasDuplicatePostScriptNames ? "file" : "style"
         var text = "\(faceCount) \(unit)\(faceCount == 1 ? "" : "s")"
         if missingFaceCount > 0 {
             text += " · \(missingFaceCount) missing"
-        }
-        if cloudFaceCount > 0 {
-            text += " · \(cloudFaceCount) cloud"
         }
         return text
     }
@@ -334,9 +328,6 @@ public struct CatalogSnapshot: Sendable {
         let missingCount = faces[range].reduce(0) {
             $0 + ($1.fileStatus != "ok" && $1.fileStatus != "cloud" ? 1 : 0)
         }
-        let cloudCount = faces[range].reduce(0) {
-            $0 + ($1.fileStatus == "cloud" ? 1 : 0)
-        }
         return CatalogFamily(
             id: faces[range.lowerBound].familyKey,
             name: name,
@@ -346,8 +337,7 @@ public struct CatalogSnapshot: Sendable {
             scriptMask: scriptMask,
             previewMask: previewMask,
             hasDuplicatePostScriptNames: postscriptNames.count < readable.count,
-            missingFaceCount: missingCount,
-            cloudFaceCount: cloudCount
+            missingFaceCount: missingCount
         )
     }
 

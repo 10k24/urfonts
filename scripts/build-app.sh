@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assembles build/Ur Fonts.app around the release binary.
+# Assembles build/URFonts.app around the release binary.
 # Development bundle: ad-hoc signed, no Sparkle yet.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ cd "$root"
 swift build -c release --product UrFonts
 binary="$(swift build -c release --show-bin-path)/UrFonts"
 
-app="$root/build/Ur Fonts.app"
+app="$root/build/URFonts.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
 cp "$binary" "$app/Contents/MacOS/UrFonts"

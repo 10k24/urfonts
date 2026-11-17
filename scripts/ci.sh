@@ -32,6 +32,18 @@ echo "cold index ${cold_index}s"
 "$bin/urfonts-cli" stats --db "$db"
 "$bin/urfonts-cli" search "Fixture" --db "$db" | grep -q "Fixture"
 
+# One-file delta: touch a fixture file, then scan only that path.
+delta_file="$(find "$work/fixtures" -type f -name '*.ttf' -print -quit)"
+touch "$delta_file"
+delta_line="$("$bin/urfonts-cli" scan-changes \
+    "$work/fixtures" "$delta_file" --db "$db" | grep '^delta ')"
+echo "$delta_line"
+delta_ms="$(echo "$delta_line" | awk '{print $2}')"
+if ! awk -v ms="$delta_ms" 'BEGIN { exit !(ms < 50) }'; then
+    echo "single-file delta ${delta_ms} ms exceeds the 50 ms budget" >&2
+    exit 1
+fi
+
 # Search p99 must stay under 16 ms. The bench scenario enforces it.
 "$bin/UrFonts" --headless bench --db "$db"
 
@@ -54,4 +66,4 @@ if [ "${#fonts[@]}" -eq 2 ]; then
 fi
 
 ./scripts/build-app.sh >/dev/null
-test -x "build/Ur Fonts.app/Contents/MacOS/UrFonts"
+test -x "build/URFonts.app/Contents/MacOS/UrFonts"

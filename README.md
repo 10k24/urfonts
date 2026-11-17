@@ -116,9 +116,10 @@ swift test
 ./scripts/ci.sh            # tests, fixtures, headless scenarios, Release bundle
 ./scripts/test.sh          # ci.sh plus the network-dependent Google render
 ./scripts/bench.sh         # Release perf sample; BENCH.md records the results
+./scripts/make-dmg.sh      # build/URFonts-<version>.dmg; see docs/RELEASING.md
 ./scripts/build-icons.sh   # compiles Assets.car and UrFonts.icns from design/icon
-./scripts/build-app.sh     # assembles build/Ur Fonts.app (ad-hoc signed)
-open "build/Ur Fonts.app"
+./scripts/build-app.sh     # assembles build/URFonts.app (ad-hoc signed)
+open "build/URFonts.app"
 ```
 
 The app stores its library at

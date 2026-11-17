@@ -1,6 +1,6 @@
 # App icon pipeline
 
-Two artifacts ship in `Ur Fonts.app/Contents/Resources`:
+Two artifacts ship in `URFonts.app/Contents/Resources`:
 
 | File | Used by | Source |
 |---|---|---|
@@ -58,10 +58,15 @@ annotated for Default (light), Dark and Mono:
 ```
 design/icon/
   UrFonts.icon                 Icon Composer file (a package)
+  urfonts-v2-1024.png          Flattened Icon Composer export (source artwork)
   urfonts-icon.ai              Illustrator source
   legacy/
     icon-1024.png              Big Sur style, transparent, light only
 ```
+
+The `.icon` package uses the UR mark extracted from `urfonts-v2-1024.png` as its
+foreground layer, with the background kept as an adaptive fill. The legacy PNG is
+the flattened export inset to the 824 px Big Sur body.
 
 ## Build
 

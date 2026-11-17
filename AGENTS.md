@@ -267,6 +267,9 @@ These are the facts the design rests on. Verify before changing any of them.
   footer carries the latest action message and the preview size, not counts.
   Scope counts use paths and collection membership, never the sum of a family's
   faces, because a family can span folders.
+- Status and warning copy separates a folder name or path from the sentence with
+  a colon: `Scanning: Name…`, `Removed: /path`, `Ignored folder: Name`. The name
+  is a value, not part of the prose.
 - New user-facing UI copy goes through `Messages` in the app target. Keys are
   dotted feature names; defaults live beside the key so localization can be added
   without touching views.
@@ -359,14 +362,14 @@ These are the facts the design rests on. Verify before changing any of them.
 - Cloud file providers are not ordinary folders. An online-only Dropbox root
   stalled indefinitely because reading a placeholder blocks on the provider.
   Before opening a font, check File Provider dataless metadata and iCloud
-  download status. Skip placeholders with a `skippedCloud` scan count; never
-  mark them missing. Store them with status `cloud`; Warnings shows "Not
-  downloaded from cloud" and never offers deletion. Family counts, file rows and
-  activation controls distinguish cloud from missing. Cloud timeouts and network
-  failures are classified by `CloudAccess` and surface as a retryable cloud
-  error, never as a damaged font. A materialized
-  file is indexed by the next event or sweep. Keep provider roots opt-in and
-  never scan a provider root by default.
+  download status. Skip placeholders with a `skippedCloud` scan count and never
+  create a row for a file that was never indexed; online-only files are a normal
+  provider state, not a warning. If an indexed file becomes online-only, keep its
+  faces, set status `cloud` and show the style as unavailable in the font sheet;
+  no Warnings entry and no badge. Cloud timeouts and network failures are
+  classified by `CloudAccess` and surface as a retryable cloud error, never as a
+  damaged font. A materialized file is indexed by the next event or sweep. Keep
+  provider roots opt-in and never scan a provider root by default.
 - Paths must be resolved before they are compared. Foundation does not resolve
   the `/var` firmlink (`resolvingSymlinksInPath` leaves it), but FileManager and
   FSEvents return `/private/var/...`. User boundaries (folder add, ignore list,
@@ -478,8 +481,8 @@ Planned. Nothing in this section is implemented yet.
 ### Packaging
 
 - SwiftPM executable plus `scripts/build-app.sh`. No Xcode project.
-- Bundle is `Ur Fonts.app`; executable is `UrFonts`; bundle ID
-  `com.10k24.urfonts`. The dev build script assembles `build/Ur Fonts.app` and
+- Bundle is `URFonts.app`; executable is `UrFonts`; bundle ID
+  `com.10k24.urfonts`. The dev build script assembles `build/URFonts.app` and
   ad-hoc signs it; notarization comes at release.
 - A bare SwiftPM binary launches as `BackgroundOnly`; always package the bundle
   before judging activation, menus or focus.
@@ -494,6 +497,8 @@ Planned. Nothing in this section is implemented yet.
   lives. Update it for every user-visible behavior, command or path change.
 - `docs/ARCHITECTURE.md` is the structural map and data flow. Update it when a
   module boundary, schema, command surface or data path changes.
+- `docs/RELEASING.md` covers version bumps, signing, notarization and publishing.
+  Update it when the release process or credentials change.
 - `CONTRIBUTING.md` covers setup, the gate, style and support policy. Update it
   when requirements, scripts or review rules change.
 - `CHANGELOG.md` records notable user-visible changes under `Unreleased`, grouped
@@ -540,11 +545,11 @@ Tests/UrFontsCoreTests       parser, scanner, catalog, activation with fakes
 Tests/UrFontsSnapshotTests   planned: ImageRenderer golden images
 macos/                       Info.plist
 Resources/                   planned: character sets, language data
-scripts/                     build-icons.sh, build-app.sh, ci.sh, test.sh,
-                             bench.sh, register-spike.sh (release scripts planned)
+scripts/                     build-icons.sh, build-app.sh, make-dmg.sh, ci.sh,
+                             test.sh, bench.sh, register-spike.sh
 design/icon/                 Icon Composer source plus legacy 1024 PNG
 tools/                       fixture generator
-docs/                        ARCHITECTURE.md
+docs/                        ARCHITECTURE.md, RELEASING.md
 CONTRIBUTING.md              setup, gate, style, support policy
 CHANGELOG.md                 Keep a Changelog, Unreleased until first release
 README.md                    user-facing overview and data locations

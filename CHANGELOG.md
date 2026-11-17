@@ -25,8 +25,7 @@ versions may change behavior.
 - Collections with create, rename, delete and bulk activation, always sorted
   alphabetically.
 - Saved preview samples with text, size and colors.
-- Warnings for duplicate PostScript names, missing files and cloud placeholders
-  that are not downloaded.
+- Warnings for duplicate PostScript names and missing files.
 - Google Fonts host with inline subset previews, per-style downloads, license
   labels and the same activation controls as local fonts.
 - Versioned settings export and import for folders, collections, samples,
@@ -35,13 +34,19 @@ versions may change behavior.
   persisted across launches.
 - Headless scenarios that render real views offscreen and prove the process never
   takes focus.
+- New UR mark app icon with a dark background, compiled into `Assets.car` and the
+  legacy `.icns`.
 - CI gate covering tests, a Release build, fixtures, CLI round trip, headless
   scenarios and app bundle assembly.
 
+### Changed
+
+- The development bundle is now `URFonts.app`; the executable remains `UrFonts`.
+
 ### Fixed
 
-- Font files skipped by an online-only cloud provider are recorded as cloud
-  placeholders instead of missing or damaged fonts.
+- Online-only cloud files are skipped without creating warning rows; previously
+  indexed files that become online-only remain visible as unavailable.
 - Network, timeout and offline failures show a retryable message instead of a
   database or file-system error.
 - A file owned by two overlapping roots is moved to one folder rather than

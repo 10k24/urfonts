@@ -251,10 +251,5 @@ enum Messages {
             defaultValue: "Missing or unreadable files",
             comment: "Warnings section"
         )
-        static let cloud = String(
-            localized: "problems.cloud",
-            defaultValue: "Not downloaded from cloud",
-            comment: "Warnings section"
-        )
     }
 }

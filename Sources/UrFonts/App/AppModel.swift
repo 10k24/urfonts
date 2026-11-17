@@ -204,12 +204,11 @@ final class AppModel {
     var activePostScriptOwners: [String: String] = [:]
     var duplicateCount = 0
     var missingFileCount = 0
-    var cloudFileCount = 0
     var duplicates: [DuplicatePostScriptName] = []
     var problemFiles: [ProblemFile] = []
     var isLoadingProblems = false
 
-    var problemCount: Int { duplicateCount + missingFileCount + cloudFileCount }
+    var problemCount: Int { duplicateCount + missingFileCount }
     var coverageIndexed = 0
     var coverageTotal = 0
     var isIndexingCoverage = false
@@ -455,7 +454,6 @@ final class AppModel {
         if let counts = try? database.problemCounts() {
             duplicateCount = counts.duplicates
             missingFileCount = counts.missing
-            cloudFileCount = counts.cloud
         }
     }
 
@@ -728,8 +726,8 @@ final class AppModel {
             : candidates.filter { activeFaceIDs.contains($0.id) }
         guard !faces.isEmpty else {
             status = active
-                ? "No fonts in \(collection.name)"
-                : "No active fonts in \(collection.name)"
+                ? "No fonts in: \(collection.name)"
+                : "No active fonts in: \(collection.name)"
             return
         }
         let targets = faces.map {
@@ -969,8 +967,8 @@ final class AppModel {
             )
         }
         status = state == .all
-            ? "Deactivating \(label)…"
-            : "Activating \(label)…"
+            ? "Deactivating: \(label)…"
+            : "Activating: \(label)…"
         let outcome = state == .all
             ? await activationEngine.deactivate(targets)
             : await activationEngine.activate(targets, scope: .user, source: "manual")
@@ -1441,8 +1439,8 @@ final class AppModel {
         )
         let activating = state == .available
         status = activating
-            ? "Activating \(face.style)…"
-            : "Deactivating \(face.style)…"
+            ? "Activating: \(face.style)…"
+            : "Deactivating: \(face.style)…"
         let outcome = activating
             ? await activationEngine.activate([target], scope: .user, source: "manual")
             : await activationEngine.deactivate([target])
@@ -1503,8 +1501,8 @@ final class AppModel {
             )
         }
         status = state == .all
-            ? "Deactivating \(family.name)…"
-            : "Activating \(family.name)…"
+            ? "Deactivating: \(family.name)…"
+            : "Activating: \(family.name)…"
         let outcome = state == .all
             ? await activationEngine.deactivate(targets)
             : await activationEngine.activate(targets, scope: .user, source: "manual")
@@ -1518,7 +1516,7 @@ final class AppModel {
     func addFolder(_ url: URL, kind: FolderKind = .staticFolder) async {
         guard let database, let scanner else { return }
         let resolved = URL(fileURLWithPath: LibraryPath.resolve(url.path))
-        status = "Scanning \(resolved.lastPathComponent)…"
+        status = "Scanning: \(resolved.lastPathComponent)…"
         do {
             let report = try await scanner.scan(folder: resolved, kind: kind)
             present(report)
@@ -1592,10 +1590,10 @@ final class AppModel {
             case .same:
                 append("This folder is already ignored.")
             case .descendant:
-                append("This folder is inside ignored folder \(ignored). "
+                append("This folder is inside an ignored folder: \(ignored). "
                     + "Its fonts will not be indexed.")
             case .ancestor:
-                append("This folder contains ignored folder \(ignored). "
+                append("This folder contains an ignored folder: \(ignored). "
                     + "That subtree stays excluded.")
             case .unrelated:
                 break
@@ -1607,9 +1605,9 @@ final class AppModel {
             case .same:
                 append("This folder is already in the library.")
             case .descendant:
-                append("This folder is already inside library folder \(folder.displayPath).")
+                append("This folder is already inside a library folder: \(folder.displayPath).")
             case .ancestor:
-                append("This folder contains library folder \(folder.displayPath).")
+                append("This folder contains a library folder: \(folder.displayPath).")
             case .unrelated:
                 break
             }
@@ -1637,7 +1635,8 @@ final class AppModel {
         if let blocked = files.first(where: {
             isPathIgnored($0.deletingLastPathComponent().path)
         }) {
-            errorMessage = "\(blocked.deletingLastPathComponent().lastPathComponent) is ignored. "
+            errorMessage = "Ignored folder: "
+                + "\(blocked.deletingLastPathComponent().lastPathComponent). "
                 + "Stop ignoring it in the settings first."
             return
         }
@@ -1650,7 +1649,7 @@ final class AppModel {
             grouped[directory, default: []].append(file)
         }
 
-        status = "Adding \(files.count) \(files.count == 1 ? "font" : "fonts")…"
+        status = "Adding: \(files.count) \(files.count == 1 ? "font" : "fonts")…"
         do {
             var addedFaces = 0
             var cloudErrors = 0
@@ -1667,7 +1666,7 @@ final class AppModel {
                 addedFaces += report.faces
                 cloudErrors += report.cloudErrors
             }
-            status = "Added \(addedFaces) \(addedFaces == 1 ? "font" : "fonts") from \(files.count) \(files.count == 1 ? "file" : "files")"
+            status = "Added: \(addedFaces) \(addedFaces == 1 ? "font" : "fonts") from \(files.count) \(files.count == 1 ? "file" : "files")"
             if cloudErrors > 0 {
                 errorMessage = CloudAccess.message
             }
@@ -1710,7 +1709,7 @@ final class AppModel {
         do {
             try database.setDisplayName(folderID: folder.id, name: name)
             folders = try database.folders()
-            status = "Renamed to \(name)"
+            status = "Renamed to: \(name)"
         } catch {
             report(error)
         }
@@ -1740,7 +1739,7 @@ final class AppModel {
         do {
             try database.setFolderOrder(ids)
             folders = try database.folders()
-            status = "Moved \(moved.name)"
+            status = "Moved: \(moved.name)"
         } catch {
             report(error)
         }
@@ -1767,14 +1766,14 @@ final class AppModel {
         if watched {
             // Turning watching on is a full sync, confirmed by the caller.
             await addFolder(URL(fileURLWithPath: folder.path), kind: .watched)
-            status = "Watching \(folder.displayPath)"
+            status = "Watching: \(folder.displayPath)"
             return
         }
         do {
             try database.setKind(folderID: folder.id, kind: .staticFolder)
             folders = try database.folders()
             setupWatching()
-            status = "Stopped watching \(folder.displayPath)"
+            status = "Stopped watching: \(folder.displayPath)"
         } catch {
             report(error)
         }
@@ -1836,7 +1835,7 @@ final class AppModel {
             await reload()
             folders = try database.folders()
             setupWatching()
-            status = "Removed \(folder.displayPath)"
+            status = "Removed: \(folder.displayPath)"
         } catch {
             report(error)
         }
@@ -1880,7 +1879,7 @@ final class AppModel {
             }
             await reload()
             setupWatching()
-            status = "Ignoring \((canonical as NSString).lastPathComponent)"
+            status = "Ignoring: \((canonical as NSString).lastPathComponent)"
         } catch {
             report(error)
         }
@@ -1906,7 +1905,7 @@ final class AppModel {
                 await scan(rootPaths: affected)
             }
             setupWatching()
-            status = "Indexing \((canonical as NSString).lastPathComponent) again"
+            status = "Indexing: \((canonical as NSString).lastPathComponent) again"
         } catch {
             report(error)
         }
@@ -2089,7 +2088,7 @@ final class AppModel {
         guard let database, let scanner else { return }
         for folder in folders {
             guard !isIgnored(folder.path) else { continue }
-            status = "Scanning \(folder.name)…"
+            status = "Scanning: \(folder.name)…"
             do {
                 let report = try await scanner.scan(
                     folder: URL(fileURLWithPath: folder.path),

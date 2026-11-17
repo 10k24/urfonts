@@ -54,7 +54,7 @@ func databaseURL(_ arguments: inout [String]) throws -> URL {
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
-    print("usage: urfonts-cli <index|search|stats|inspect|activate|deactivate|scope|folders|watch-folder|unwatch-folder> [options] <path>...")
+    print("usage: urfonts-cli <index|scan-changes|search|stats|inspect|activate|deactivate|scope|folders|watch-folder|unwatch-folder> [options] <path>...")
     exit(1)
 }
 arguments.removeFirst()
@@ -78,6 +78,26 @@ case "index":
     }
     let counts = try database.counts()
     print("database: \(counts.files) files, \(counts.faces) fonts, \(counts.missing) missing")
+    exit(0)
+
+case "scan-changes":
+    let database = try LibraryDatabase(url: databaseURL(&arguments))
+    guard let folder = arguments.first else {
+        fail("scan-changes needs a folder")
+    }
+    let changes = Array(arguments.dropFirst())
+    guard !changes.isEmpty else {
+        fail("scan-changes needs at least one changed path")
+    }
+    let started = Date()
+    let report = try await LibraryScanner(database: database).scan(
+        changes: changes,
+        folder: URL(fileURLWithPath: LibraryPath.resolve(folder)),
+        kind: .staticFolder
+    )
+    let elapsed = Date().timeIntervalSince(started) * 1000
+    print(report.summary)
+    print(String(format: "delta %.2f ms", elapsed))
     exit(0)
 
 case "search":

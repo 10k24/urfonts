@@ -491,7 +491,7 @@ struct PreviewSettingsView: View {
                 .font(.headline)
 
             Picker("Preset", selection: presetBinding) {
-                ForEach(PreviewPreset.allCases) { preset in
+                ForEach(PreviewPreset.all) { preset in
                     Text(preset.title).tag(preset)
                 }
             }

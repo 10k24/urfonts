@@ -147,7 +147,9 @@ enum Headless {
         }
         if let index = CommandLine.arguments.firstIndex(of: "--preset"),
            index + 1 < CommandLine.arguments.count,
-           let preset = PreviewPreset(rawValue: CommandLine.arguments[index + 1]),
+           let preset = PreviewPreset.all.first(
+               where: { $0.id == CommandLine.arguments[index + 1] }
+           ),
            let text = preset.text {
             model.sampleText = text
         }

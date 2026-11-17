@@ -19,7 +19,7 @@ Locked decisions:
 
 | Decision | Value |
 |---|---|
-| Display name | Ur Fonts, bundle `Ur Fonts.app` |
+| Display name | Ur Fonts, bundle `URFonts.app` |
 | Bundle ID | `com.10k24.urfonts` |
 | Deployment | macOS 15.0+ |
 | License | Apache-2.0, NOTICE for MIT-derived code |
@@ -127,7 +127,7 @@ under 16 ms at full scale.
 
 ### Phase 10 - Ship
 
-- **Bundle.** `scripts/build-app.sh` assembles `Ur Fonts.app` with Info.plist
+- **Bundle.** `scripts/build-app.sh` assembles `URFonts.app` with Info.plist
   document types, icon, hardened runtime, Sparkle framework.
 - **Release.** Sign, notarize, staple, DMG, appcast.
 - **Homebrew cask.**
@@ -138,7 +138,7 @@ under 16 ms at full scale.
 - **Manual-use gate.** Launch only after several weeks of the author using it as
   the daily manager, with the core workflows holding up on the real library.
 
-Gate: notarized `Ur Fonts.app` launches on a clean macOS 15 account and activates
+Gate: notarized `URFonts.app` launches on a clean macOS 15 account and activates
 a font.
 
 ### Cross-cutting
@@ -150,8 +150,6 @@ a font.
 - **Attribution.** `NOTICE` records MIT-derived Cicero code and bundled data
   licenses.
 - **App icon.** Manual design tasks:
-  - Replace the “UR FONTS” wordmark with an abstract UR mark. HIG says avoid
-    text in app icons: it is not localizable and breaks down at Dock sizes.
   - Keep the mark inside the macOS 824 px icon body. The circle guide is not
     the macOS mask; the system applies a rounded rectangle.
   - In `design/icon/UrFonts.icon`, keep the background full-bleed and opaque.
@@ -172,10 +170,11 @@ a font.
   signing secrets in git. Confirm Apache-2.0 and NOTICE.
 - **Scroll and grid bench gate.** Wire real-window signpost measurements for the
   list p99 and grid frame-rate budgets.
-- **Performance run.** Measure warm launch, scroll p50/p99, search, activation
-  and RSS in Release on the real library. Record method and raw numbers.
-- **Release automation.** Reproducible DMG, signing/notarization workflow and
-  Sparkle appcast.
+- **Performance run.** Measure warm launch to first paint, real-window scroll,
+  grid frame rate, activation and steady RSS in Release on the real library.
+  Index, delta and search budgets are already gated in CI.
+- **Release automation.** Run the signed and notarized release, integrate Sparkle
+  and publish the appcast.
 
 ### FontBase parity verification
 
@@ -334,11 +333,11 @@ features are listed too, so the gap is explicit rather than implied.
 - **Watching a real folder.** Drop a font into a watched Dropbox folder and
   confirm it appears within the debounce without a full rescan; check the
   five-minute sweep after quitting and relaunching.
-- **Cloud placeholders.** Dataless and iCloud placeholders are stored as `cloud`,
-  skipped with `skippedCloud`, shown in Warnings, not counted as missing, and
-  index after materialization. Covered with an injected placeholder predicate.
-  Still needs one real online-only Dropbox/iCloud folder and a read-timeout
-  check.
+- **Cloud placeholders.** Dataless and iCloud placeholders are skipped with
+  `skippedCloud`; files never indexed create no row and no warning. Indexed files
+  that become online-only keep their faces and show as unavailable; materialized
+  files index normally. Covered with an injected placeholder predicate. Still
+  needs one real online-only Dropbox/iCloud folder and a read-timeout check.
 - **Cloud access errors.** URLError and POSIX timeout/offline failures map to a
   retryable cloud message and raise an alert after a scan. Needs a real
   disconnected/timeout check against a provider-backed folder.
@@ -417,10 +416,16 @@ features are listed too, so the gap is explicit rather than implied.
 - **Bench harness.** `--headless bench` times snapshot load and the search
   rebuild; `scripts/bench.sh` times a cold fixture index and row scrolling;
   `BENCH.md` records the method, environment and raw numbers.
-- **Index and search gate.** `scripts/ci.sh` fails when the full fixture cold
-  index exceeds 30 s or search p99 exceeds 16 ms.
+- **Index, search and delta gate.** `scripts/ci.sh` fails when the full fixture
+  cold index exceeds 30 s, a one-file delta exceeds 50 ms, or search p99 exceeds
+  16 ms.
 - **Release templates.** Bug and feature issue forms, a pull request checklist
   and a versioning policy.
+- **Release DMG.** `scripts/make-dmg.sh` builds and verifies
+  `build/URFonts-<version>.dmg` and optionally signs and notarizes it;
+  `docs/RELEASING.md` is the release checklist.
+- **App icon artwork.** New UR mark from the flattened Icon Composer export,
+  compiled into `Assets.car` and `UrFonts.icns`.
 - **List container.** Fixed-height SwiftUI lazy stack chosen over `NSTableView`
   by `--headless list-spike`; the real browser re-measures in Phase 2.
 - **Core skeleton.** SwiftPM package, GRDB schema with WAL, and `LibraryLocation`
@@ -443,7 +448,7 @@ features are listed too, so the gap is explicit rather than implied.
 - **Browser snapshot.** `--headless browser` renders the real window offscreen,
   asserts it never activates, and writes a PNG.
 - **App bundle.** `scripts/build-app.sh` assembles and ad-hoc signs
-  `build/Ur Fonts.app` so the app launches as a normal foreground app.
+  `build/URFonts.app` so the app launches as a normal foreground app.
 - **Sidebar selection.** All Fonts and folders use a real selection enum, so
   every row selects and highlights.
 - **Footer layout.** Detail content and the status bar are a pinned VStack; the
@@ -471,11 +476,11 @@ features are listed too, so the gap is explicit rather than implied.
   serializes watcher, sweep, rescan and import scans. `apply` reuses a globally
   existing file row instead of inserting a duplicate. Raw database errors are
   logged and replaced with safe UI text; no SQL reaches an alert.
-- **Cloud placeholders and errors.** Dataless and iCloud placeholders are stored
-  as `cloud`, shown separately in Warnings, never counted as missing or removed.
-  Family counts, activation controls and file rows distinguish cloud; a
-  materialized file returns on the next scan. Timeouts and offline failures map
-  to a retryable cloud message through `CloudAccess`.
+- **Cloud placeholders and errors.** Online-only placeholders are skipped with
+  `skippedCloud`; files never indexed create no row and no warning. Indexed files
+  that become online-only keep their faces and show as unavailable. Materialized
+  files return on the next scan. Timeouts and offline failures map to a retryable
+  cloud message through `CloudAccess`.
 - **Watched folders in the UI.** Add Folder offers Watch or One-time Scan;
   sidebar eye icon and Watch/Stop Watching actions.
 - **Canonical paths.** Scanner and watcher agree on `realpath`; delta scans

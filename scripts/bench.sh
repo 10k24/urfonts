@@ -41,6 +41,11 @@ if [ -z "$db" ]; then
         >"$work/index.log" 2>"$work/index.time"
     grep "database:" "$work/index.log"
     awk '/^real / {print "cold index " $2 " s"}' "$work/index.time"
+
+    delta_file="$(find "$work/library" -type f -name '*.ttf' -print -quit)"
+    touch "$delta_file"
+    "$bin/urfonts-cli" scan-changes \
+        "$work/library" "$delta_file" --db "$db" | grep '^delta '
 fi
 
 "$bin/UrFonts" --headless bench --db "$db" | grep -E "load=|FAIL" || true

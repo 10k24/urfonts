@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "extended-gray:0.00000,1.00000",
-      "extended-gray:0.00000,1.00000"
+      "extended-gray:0.10196,1.00000",
+      "extended-gray:0.10196,1.00000"
     ]
   },
   "groups" : [
@@ -13,7 +13,7 @@
           "image-name" : "Image.png",
           "name" : "Image",
           "position" : {
-            "scale" : 0.88,
+            "scale" : 1,
             "translation-in-points" : [
               0,
               0
@@ -23,10 +23,10 @@
       ],
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.5
+        "opacity" : 0
       },
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.3
       }
     }

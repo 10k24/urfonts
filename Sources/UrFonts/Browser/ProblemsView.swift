@@ -9,7 +9,6 @@ struct ProblemsView: View {
     @Bindable var model: AppModel
     @State private var duplicatesExpanded = false
     @State private var missingExpanded = false
-    @State private var cloudExpanded = false
     @State private var confirmRemoveMissing = false
 
     var body: some View {
@@ -57,7 +56,7 @@ struct ProblemsView: View {
                         }
                     }
 
-                    if !missingFiles.isEmpty {
+                    if !model.problemFiles.isEmpty {
                         DisclosureGroup(isExpanded: $missingExpanded) {
                             Text("These files were moved, deleted, or cannot be read. "
                                 + "Their entries stay until you remove them.")
@@ -65,14 +64,14 @@ struct ProblemsView: View {
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 4)
 
-                            Button("Remove \(missingFiles.count) Missing "
-                                + "\(missingFiles.count == 1 ? "Entry" : "Entries")…",
+                            Button("Remove \(model.problemFiles.count) Missing "
+                                + "\(model.problemFiles.count == 1 ? "Entry" : "Entries")…",
                                 role: .destructive) {
                                 confirmRemoveMissing = true
                             }
                             .padding(.vertical, 2)
 
-                            ForEach(missingFiles) { file in
+                            ForEach(model.problemFiles) { file in
                                 problemRow(file)
                             }
                         } label: {
@@ -80,12 +79,12 @@ struct ProblemsView: View {
                                 title: Messages.Problems.missing,
                                 detail: "Files no longer available on disk",
                                 systemImage: "questionmark.folder",
-                                count: missingFiles.count
+                                count: model.problemFiles.count
                             )
                             .contextMenu {
                                 Button("Copy All Missing Warnings") {
                                     copy(
-                                        missingFiles
+                                        model.problemFiles
                                             .map(problemMessage)
                                             .joined(separator: "\n\n")
                                     )
@@ -96,45 +95,13 @@ struct ProblemsView: View {
                             }
                         }
                     }
-
-                    if !cloudFiles.isEmpty {
-                        DisclosureGroup(isExpanded: $cloudExpanded) {
-                            Text("These files live in a cloud folder but are not "
-                                + "downloaded locally. Make them available offline "
-                                + "in your cloud app, then rescan. They are not "
-                                + "missing.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 4)
-
-                            ForEach(cloudFiles) { file in
-                                problemRow(file)
-                            }
-                        } label: {
-                            warningLabel(
-                                title: Messages.Problems.cloud,
-                                detail: "Stored in the cloud, not downloaded",
-                                systemImage: "icloud.slash",
-                                count: cloudFiles.count
-                            )
-                            .contextMenu {
-                                Button("Copy All Cloud Warnings") {
-                                    copy(
-                                        cloudFiles
-                                            .map(problemMessage)
-                                            .joined(separator: "\n\n")
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
                 .listStyle(.inset)
             }
         }
         .confirmationDialog(
-            "Remove \(missingFiles.count) missing "
-                + "\(missingFiles.count == 1 ? "entry" : "entries")?",
+            "Remove \(model.problemFiles.count) missing "
+                + "\(model.problemFiles.count == 1 ? "entry" : "entries")?",
             isPresented: $confirmRemoveMissing,
             titleVisibility: .visible
         ) {
@@ -146,14 +113,6 @@ struct ProblemsView: View {
             Text("Removed fonts also leave their collections. No files on disk "
                 + "are touched. A later scan adds the font back if the file returns.")
         }
-    }
-
-    private var missingFiles: [ProblemFile] {
-        model.problemFiles.filter { $0.status != "cloud" }
-    }
-
-    private var cloudFiles: [ProblemFile] {
-        model.problemFiles.filter { $0.status == "cloud" }
     }
 
     private func warningLabel(
@@ -238,7 +197,6 @@ struct ProblemsView: View {
 
     private func problemStatusLabel(_ file: ProblemFile) -> String {
         switch file.status {
-        case "cloud": "Not downloaded from cloud"
         case "missing": "Missing"
         default: "Unreadable"
         }

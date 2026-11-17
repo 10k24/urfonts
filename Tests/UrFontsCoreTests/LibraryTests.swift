@@ -419,37 +419,43 @@ struct LibraryTests {
         #expect(try database.faceIDs(inCollection: collectionID).count == 3)
     }
 
-    @Test("cloud placeholders are skipped and never marked missing")
+    @Test("cloud placeholders are skipped without warning rows")
     func cloudPlaceholders() async throws {
         let root = try makeLibrary(count: 1)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let database = try LibraryDatabase(inMemory: true)
-        _ = try await LibraryScanner(database: database).scan(folder: root)
-
         let placeholderScanner = LibraryScanner(
             database: database,
             cloudPlaceholderCheck: { _, _ in true }
         )
+
+        // A file that was never indexed gets no row and no warning.
+        let unseen = try await placeholderScanner.scan(folder: root)
+        #expect(unseen.skippedCloud == 1)
+        #expect(try database.counts().files == 0)
+        #expect(try database.counts().missing == 0)
+        #expect(try database.problemFiles().isEmpty)
+        #expect(try database.problemCounts().missing == 0)
+
+        // An indexed file that becomes online-only keeps its faces.
+        _ = try await LibraryScanner(database: database).scan(folder: root)
         let report = try await placeholderScanner.scan(folder: root)
         #expect(report.skippedCloud == 1)
         #expect(report.removedFiles == 0)
         #expect(try database.counts().files == 1)
         #expect(try database.counts().missing == 0)
-        let counts = try database.problemCounts()
-        #expect(counts.missing == 0)
-        #expect(counts.cloud == 1)
+        #expect(try database.problemFiles().isEmpty)
+        #expect(try database.problemCounts().missing == 0)
         let family = try #require(try database.snapshot().families.first)
-        #expect(family.cloudFaceCount == 1)
         #expect(family.missingFaceCount == 0)
-        #expect(family.countLabel.contains("cloud"))
+        #expect(!family.countLabel.contains("cloud"))
         #expect(try database.deleteMissingFiles() == 0)
-        #expect(try database.problemCounts().cloud == 1)
 
+        // Materialized files return to normal on the next scan.
         _ = try await LibraryScanner(database: database).scan(folder: root)
-        #expect(try database.problemCounts().cloud == 0)
+        #expect(try database.counts().files == 1)
         #expect(try database.counts().missing == 0)
-        #expect(try database.snapshot().families.first?.cloudFaceCount == 0)
     }
 
     @Test("concurrent scans of one new file do not collide")

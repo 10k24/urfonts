@@ -15,9 +15,9 @@ public struct ScanReport: Sendable, Equatable {
 
     public var summary: String {
         let summary = String(
-            format: "Scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, cloud skipped %d, cloud errors %d, fonts %d, %.2f s",
+            format: "Scanned %d files, new %d, changed %d, unchanged %d, removed %d, failed %d, cloud errors %d, fonts %d, %.2f s",
             scannedFiles, newFiles, changedFiles, unchangedFiles,
-            removedFiles, failedFiles, skippedCloud, cloudErrors, faces, seconds
+            removedFiles, failedFiles, cloudErrors, faces, seconds
         )
         return summary
     }
@@ -67,10 +67,7 @@ public actor LibraryScanner {
         }
         let candidates = enumeration.files
         let skippedCloud = enumeration.skippedCloud
-        try database.markCloudFiles(
-            folderID: folderID,
-            paths: Array(skippedCloud)
-        )
+        try database.markCloudFiles(paths: Array(skippedCloud))
 
         let currentVersion = FontFileParser.version
         var pending: [(url: URL, stamp: FileStamp)] = []
@@ -150,7 +147,11 @@ public actor LibraryScanner {
         let roots = try database.folders()
         let skip = try skipPrefixes(for: folderPath, roots: roots)
         try adoptFromAncestors(folderID: folderID, path: folderPath, roots: roots)
-        let existing = try database.existingFiles(folderID: folderID)
+        let canonicalChanges = Set(paths.map(canonicalPath))
+        let existing = try database.existingFiles(
+            folderID: folderID,
+            paths: Array(canonicalChanges)
+        )
         let manager = FileManager.default
 
         var pending: [(url: URL, stamp: FileStamp)] = []
@@ -161,8 +162,7 @@ public actor LibraryScanner {
         var skippedCloud = Set<String>()
         var seen = 0
 
-        for rawPath in Set(paths) {
-            let path = canonicalPath(rawPath)
+        for path in canonicalChanges {
             guard !skip.contains(where: { LibraryPath.isInside(path, root: $0) }) else {
                 continue
             }
@@ -203,10 +203,7 @@ public actor LibraryScanner {
         let parsed = outcomes.compactMap(\.file)
         let failed = outcomes.filter { $0.file == nil }.count
         let cloudErrors = outcomes.filter(\.cloudError).count
-        try database.markCloudFiles(
-            folderID: folderID,
-            paths: Array(skippedCloud)
-        )
+        try database.markCloudFiles(paths: Array(skippedCloud))
         try database.apply(
             folderID: folderID,
             parsed: parsed,
