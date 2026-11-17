@@ -7,6 +7,11 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# The CI runner's Xcode 26.3 asset agent can crash while compositing the layered
+# raster icon. Exercise the legacy icns path in CI; release builds still require
+# Assets.car.
+export URFONTS_LEGACY_ICON=1
+
 # Repo hygiene: generated fonts, databases and signing material never belong in
 # the tree. Generated icon artifacts are rebuilt by build-app.sh.
 forbidden="$(find . \

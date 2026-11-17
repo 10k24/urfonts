@@ -84,5 +84,11 @@ the flattened export inset to the 824 px Big Sur body.
 `UrFonts.icns` from the legacy PNG with `sips` and `iconutil`. It fails with a
 clear message when a source is missing.
 
+Set `URFONTS_LEGACY_ICON=1` to skip `actool` and build only the `.icns`.
+`build-app.sh` keeps the app buildable if `actool` fails, and `scripts/ci.sh`
+uses the legacy path because the runner's Xcode 26.3 asset agent crashes on the
+layered raster icon. Release builds require `Assets.car`; `make-dmg.sh` refuses
+to package without it.
+
 `UrFonts.icon` is authored by hand in Icon Composer; this repo does not generate
 it. Keep the `.icon` package in git so the icon is reproducible.

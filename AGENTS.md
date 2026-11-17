@@ -461,9 +461,11 @@ These are the facts the design rests on. Verify before changing any of them.
 - CI runs `scripts/ci.sh` on `macos-15`; `scripts/test.sh` is the same gate plus
   the network-dependent Google render. The gate enforces the full-fixture
   cold-index and search budgets; scroll and grid stay real-window measurements.
-  The image default Xcode predates Swift 6.2, so the workflow selects the latest
-  stable Xcode first. `act` cannot emulate macOS runners; validate workflow
-  changes with `actionlint`.
+  CI sets `URFONTS_LEGACY_ICON=1` because Xcode 26.3's asset agent crashes on the
+  layered raster icon; release builds require `Assets.car`. The image default
+  Xcode predates Swift 6.2, so the workflow selects the latest stable Xcode
+  first. `act` cannot emulate macOS runners; validate workflow changes with
+  `actionlint`.
 - `AppModel` can be constructed before any `NSApplication` exists (the
   `ImageRenderer` path). Never touch `NSApp` from its initializer without a nil
   guard; `start()` applies the appearance once the app is up.
@@ -487,6 +489,8 @@ Planned. Nothing in this section is implemented yet.
   `CFBundleVersion` and a development stamp in About; release builds set
   `URFONTS_BUILD_NUMBER`. Generated `Assets.car` and `UrFonts.icns` live in
   `macos/`, are ignored by git, and are rebuilt by `build-app.sh` when missing.
+  `build-icons.sh` falls back to the legacy `.icns` when `actool` fails; CI uses
+  that path, while release builds require `Assets.car`.
 - A bare SwiftPM binary launches as `BackgroundOnly`; always package the bundle
   before judging activation, menus or focus.
 - Developer ID, hardened runtime, notarized. GRDB is the only dependency today;

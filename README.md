@@ -1,189 +1,106 @@
 # Ur Fonts
 
-A native macOS font manager for very large libraries. Browse, preview, activate,
-and keep folders in sync without copying or moving a single font file.
+A native macOS font manager for very large libraries. Browse, preview and
+activate fonts in place, and keep folders in sync without copying or modifying a
+font file.
 
-Built for libraries with tens of thousands of fonts, the scale where most font
-managers start to lag. Family-first rows, fixed-height CoreText previews,
-in-place activation, and a delta scanner instead of full rescans.
+Built for libraries with tens of thousands of fonts: family-first rows,
+fixed-height CoreText previews, in-place activation and a delta scanner.
 
-**Status:** pre-release. Entering a few weeks of daily use before launch. No
-notarized build yet.
+[![CI](https://github.com/10k24/urfonts/actions/workflows/ci.yml/badge.svg)](https://github.com/10k24/urfonts/actions/workflows/ci.yml)
 
----
+**Status:** pre-release. **Source only:** no `.app` or DMG binaries are
+published. Build from source with Xcode 26 or newer.
 
-## Why another font manager?
+## What works
 
-Because the hard parts are not the part that looks like the product.
-
-The interface is the easy 20%. The rest is fontd semantics: per-file versus
-per-face registration, confirming scope with `CTFontManagerGetScopeForURL`,
-Fonts-folder exceptions, duplicate PostScript behavior, and cache differences
-between macOS releases. It is scanning tens of thousands of files without
-re-reading them,
-canonicalizing paths (`/var` versus `/private/var`), and surviving cloud
-providers that block on read. It is Adobe apps that ignore fontd notifications
-and rebuild font menus on their own schedule.
-
-None of that is discoverable from Apple's documentation alone. It takes spikes
-and bug reports.
-
-Large libraries are also rare. Most designers own hundreds of fonts, not tens of
-thousands, so vendors optimize for the median: collections, tags, cloud sync,
-team seats. Frame time at that scale does not sell subscriptions. A slow
-Electron shell costs the vendor little; fixing scroll jank costs a lot and does
-not move seats. Fonts make a bad demo too: the difference between 60 fps and
-12 fps is obvious in use and invisible in a screenshot.
-
-The macOS pieces that make it fast are old and unglamorous: view reuse, CoreText
-line drawing, fixed row heights, FSEvents, signposts. Modern SwiftUI defaults —
-`List`, self-sizing rows, a `Text` per row — are exactly the wrong tools at this
-scale. Most apps pick the defaults, hit five thousand rows, and stop.
-
-It is "easy sauce" only after accepting the constraints:
-
-- in-place registration instead of copies
-- family-first snapshots instead of live file access
-- one CTFont per face, with derived point sizes
-- fixed-height Canvas rows
-- a canonical-path delta scanner
-- and no per-app hacks
-
-The code for that is a few thousand lines. Knowing which few thousand is the
-expensive part.
-
----
-
-## What works today
-
-- Index static or watched folders. New installs seed the standard macOS font
-  folders as watched. Files are read-only, never renamed or moved.
+- Index watched or static folders. New installs seed the standard macOS font
+  folders. Files are read-only, never renamed or moved.
 - Add individual font files or drop files and folders on the browser.
-- Browse a family-first list or grid over tens of thousands of fonts, with a
-  nested folder tree that mirrors indexed directories.
-- Active sidebar item for fonts currently registered through Ur Fonts, with the
-  same list, preview and activation controls.
-- Warnings page for duplicate PostScript names and missing files, grouped by
-  type with expandable disclosure sections and reveal/copy-path actions. Remove
-  Missing Entries deletes the stale rows, never the files.
-- Preview in the font itself, with editable text, presets, a size slider in the
-  status bar, and text/background colors. Script-aware samples for CJK, Arabic,
-  Hebrew and others once the coverage index is built from the filter popover.
-  Unsupported characters show the font's `.notdef`; previews never substitute
-  another font.
-- Activate and deactivate families globally through CoreText, with a journal and
-  launch reconciliation. Fonts inside system Fonts folders are left alone.
-- Watch folders with FSEvents plus a five-minute sweep; only changed paths are
-  re-read.
-- Font sheet: every style rendered in the sample text, per-style activation and
-  absolute file paths, variable-font axis sliders, OpenType feature list,
-  sectioned glyph map with character, code point and SVG copy, file info.
-  Duplicate file versions appear individually; when one PostScript name is
-  active, the others are disabled and name the active path.
-- Folder labels, watched/static folders, Ignore This Folder for any subtree
-  (also managed in Settings → Ignored Folders, with FontBase cache detection),
-  font rows disappear, files stay, reveal in Finder, safe removal.
-- Collections, sorted alphabetically, with create/rename/delete, add/remove from a
-  family, and Activate All / Deactivate All from the collection menu.
-- Named preview samples (⌘E) with text, size and colors.
-- In-app help (⌘?) covering the library, activation, previews, warnings, Google
-  Fonts and known limits.
-- About panel with the 10k24 Studio credit, version, copyright and a link to the
-  GitHub repository.
-- First-run guidance explaining the read-only model, adding a folder and global
-  activation.
-- Appearance setting in Settings (⌘,) for System, Light or Dark. The choice is
-  remembered across launches and applies to every window, panel and menu.
-- System fonts visible by default, hideable from Filters; Apple's leading `.`
-  is stripped for display.
-- Non-Latin family names keep the local name and add a Latin label in
-  parentheses, and sort under that label.
-- Export/Import Settings as versioned JSON: folders, collections, samples,
-  preview settings and ignored folder paths, ready for a dotfiles repo.
-- Google Fonts lives under Hosts in the sidebar and uses the same list/grid rows
-  as the library, including inline previews from a lightweight subset before
-  download. Click the activation square to download and activate a family; the
-  family sheet lists every style with its own preview.
+- Family-first list and grid over tens of thousands of fonts, with search,
+  filters, sorting and a nested folder tree.
+- Preview in the font itself: sample text, presets, size and colors. Unsupported
+  characters show `.notdef`; previews never substitute another font.
+- Global activation through CoreText, with a journal and launch reconciliation.
+  Installed system fonts stay locked; duplicate PostScript names are blocked.
+- Font sheet with every style, per-style activation, absolute paths, variable
+  axes, OpenType feature tags, glyph map and file info.
+- Collections, sorted alphabetically, with bulk activation. Saved preview
+  samples with text, size and colors.
+- Warnings for duplicate PostScript names and missing files. Cleanup removes
+  library rows, never files.
+- Google Fonts under Hosts, with inline previews, per-style download and
+  activation, and saved licenses.
+- Settings for appearance and ignored folders, plus versioned settings
+  export/import. In-app help, first-run guidance and an About panel.
 - Headless test modes that never take focus.
 
 Not there yet: favorites, tags, Quick Look, document preflight, font-cache repair
-for re-exported fonts, full GlyphsApp language parity, notarized release.
+for re-exported fonts, full GlyphsApp language parity, signed/notarized builds.
 
 ## Requirements
 
 - macOS 15 or later
-- Swift 6.2 or newer toolchain
+- Xcode 26 or newer, or a Swift 6.2+ toolchain
 
 ## Build and run
 
 ```sh
-swift build
-swift test
-./scripts/ci.sh            # tests, fixtures, headless scenarios, Release bundle
-./scripts/test.sh          # ci.sh plus the network-dependent Google render
-./scripts/bench.sh         # Release perf sample; BENCH.md records the results
-./scripts/perf-window.sh   # Instruments capture for real-window perf
-./scripts/make-dmg.sh      # build/UrFonts-<version>.dmg; see docs/RELEASING.md
-./scripts/build-icons.sh   # compiles Assets.car and UrFonts.icns from design/icon
-./scripts/build-app.sh     # assembles build/UrFonts.app (ad-hoc signed)
+git clone https://github.com/10k24/urfonts.git
+cd urfonts
+./scripts/build-app.sh
 open "build/UrFonts.app"
 ```
 
-The app stores its library at
-`~/Library/Application Support/Ur Fonts/library.sqlite3`.
+No prebuilt apps are published. Build locally from source.
 
-### Where your data lives
+```sh
+swift test
+./scripts/ci.sh            # deterministic gate
+./scripts/test.sh          # ci.sh plus the network Google render
+```
+
+## Where your data lives
 
 - **Library database:** `~/Library/Application Support/Ur Fonts/library.sqlite3`.
-  Folders, indexed files and faces, the activation journal, collections, saved
-  samples and ignored folder paths.
+  Folders, files, faces, activation journal, collections, samples and ignored
+  folder paths.
 - **App preferences:** `~/Library/Preferences/com.10k24.urfonts.plist`.
-  Appearance (`urfonts.appearance`: `system`, `light` or `dark`), system-font
-  visibility (`urfonts.showSystemFonts`), file-name fallback
-  (`urfonts.fallbackFileNames`) and first-run completion
-  (`urfonts.hasSeenWelcome`). Inspect with
-  `defaults read com.10k24.urfonts`.
-- **Google Fonts downloads:** `~/Library/Application Support/Ur Fonts/GoogleFonts`
-  (catalog cache, TTF files and licenses).
+  Appearance, system-font visibility, file-name fallback and first-run state.
+  Inspect with `defaults read com.10k24.urfonts`.
+- **Google Fonts:** `~/Library/Application Support/Ur Fonts/GoogleFonts` for
+  downloads, catalog cache and licenses.
 - **Google host previews:** `~/Library/Caches/Ur Fonts/HostPreviews`. Safe to
-  delete; they are re-fetched.
-- **Exported settings:** versioned JSON, written wherever you choose with
-  Settings → Export. It is not read on launch.
+  delete.
+- **Exported settings:** versioned JSON, written wherever you choose.
 
-Font files are never modified, moved or copied. The library only stores paths
-and metadata.
+Font files are never modified, moved or copied. The library stores paths and
+metadata only.
 
-A command line surface exists for indexing and diagnostics:
+## Command line
 
 ```sh
 urfonts-cli index <folder> --db <path>
 urfonts-cli search "inter" --db <path>
-urfonts-cli folders --db <path>
 urfonts-cli stats --db <path>
+urfonts-cli folders --db <path>
 urfonts-cli index-coverage --db <path>
 urfonts-cli google-catalog
 urfonts-cli google-download Inter
 ```
 
-## How it is built
+## Docs
 
-- SwiftPM, Swift 6 strict concurrency, macOS 15.
-- GRDB/SQLite for the library; an immutable in-memory snapshot for the UI.
-- CoreText for names, previews and registration; a small SFNT reader for `fvar`
-  axes and metrics.
-- SwiftUI shell, fixed-height lazy rows, CoreText drawing inside `Canvas`.
-- FSEvents for folder changes.
-
-Architecture and data flow: `docs/ARCHITECTURE.md`. Setup, gate and code
-conventions: `CONTRIBUTING.md`. Notable changes: `CHANGELOG.md`. Invariants and
-the working backlog live in `AGENTS.md` and `OPEN_ISSUES.md`.
+- `docs/ARCHITECTURE.md` — modules and data flow
+- `CONTRIBUTING.md` — setup, gate, style and support
+- `CHANGELOG.md` — notable changes
+- `BENCH.md` — measured performance
+- `AGENTS.md` and `OPEN_ISSUES.md` — invariants and backlog
 
 ## Who
 
 Built by [Shakeel Mohamed](https://shakeel.design) at
-[10k24](https://10k24.com), a Los Angeles design studio built on creativity,
-computing, and collaboration. Typography is the practice; performance is the
-habit.
+[10k24](https://10k24.com), a Los Angeles design studio.
 
 ## License
 

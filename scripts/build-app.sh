@@ -16,6 +16,8 @@ binary="$(swift build -c release --show-bin-path)/UrFonts"
 
 app="$root/build/UrFonts.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+rm -f "$app/Contents/Resources/Assets.car" \
+    "$app/Contents/Resources/UrFonts.icns"
 
 cp "$binary" "$app/Contents/MacOS/UrFonts"
 cp "$root/macos/Info.plist" "$app/Contents/Info.plist"

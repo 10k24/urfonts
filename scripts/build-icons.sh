@@ -18,16 +18,25 @@ fi
 
 mkdir -p "$out" build
 
-echo "compiling $icon"
-xcrun actool "$icon" \
-    --compile "$out" \
-    --platform macosx \
-    --minimum-deployment-target 15.0 \
-    --app-icon UrFonts \
-    --output-partial-info-plist "build/icon-info.plist" \
-    --output-format human-readable-text \
-    --notices \
-    --warnings
+if [ "${URFONTS_LEGACY_ICON:-0}" = "1" ]; then
+    echo "skipping Assets.car (URFONTS_LEGACY_ICON=1)"
+else
+    echo "compiling $icon"
+    if ! xcrun actool "$icon" \
+        --compile "$out" \
+        --platform macosx \
+        --minimum-deployment-target 15.0 \
+        --app-icon UrFonts \
+        --output-partial-info-plist "build/icon-info.plist" \
+        --output-format human-readable-text \
+        --notices \
+        --warnings; then
+        # Xcode 26.3's asset agent can fail on a layered raster icon. Keep the
+        # app buildable with the legacy icns instead of failing the whole gate.
+        rm -f "$out/Assets.car"
+        echo "warning: actool could not compile $icon; shipping legacy icns only" >&2
+    fi
+fi
 
 if [ -f "$legacy" ]; then
     echo "building UrFonts.icns from $legacy"

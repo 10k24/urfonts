@@ -22,6 +22,10 @@ if [ ! -d "$app" ]; then
     echo "missing $app" >&2
     exit 1
 fi
+if [ ! -f "$app/Contents/Resources/Assets.car" ]; then
+    echo "missing Assets.car; icon compilation failed or used the legacy path" >&2
+    exit 1
+fi
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
     codesign --force --options runtime --timestamp \

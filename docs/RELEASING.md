@@ -27,6 +27,10 @@ This checklist covers a signed release. Development builds only need
 
 ## Signed DMG
 
+Confirm `build/UrFonts.app/Contents/Resources/Assets.car` exists before shipping.
+`make-dmg.sh` refuses to package without it. CI and development machines may
+fall back to the legacy `.icns`; that is not a release build.
+
 Create a Developer ID Application certificate in the Apple Developer account and
 store a notarytool profile in the login keychain:
 
