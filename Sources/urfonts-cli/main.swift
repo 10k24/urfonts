@@ -112,7 +112,7 @@ case "search":
     for family in matches {
         let faces = snapshot.faces(in: family)
         let styles = faces.map(\.style).joined(separator: ", ")
-        print("\(family.name)\t\(family.faceCount) styles\t\(styles)")
+        print("\(family.name)\t\(family.styleCount) styles\t\(styles)")
     }
     print(String(
         format: "%d families, %d fonts, snapshot %.1f ms, %d matches",

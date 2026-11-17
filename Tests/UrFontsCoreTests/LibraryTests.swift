@@ -261,6 +261,35 @@ struct LibraryTests {
         #expect(after.missingFaceCount == 1)
     }
 
+    @Test("placeholder PostScript names are not faces or warnings")
+    func placeholderNames() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("urfonts-placeholder-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let spec = MinimalFontSpec(
+            family: "Placeholder Test",
+            style: "Regular",
+            postscriptName: "false",
+            weightClass: 400,
+            isItalic: false,
+            isBold: false
+        )
+        try MinimalFont.data(for: spec)
+            .write(to: root.appendingPathComponent("Placeholder-A.ttf"))
+        try MinimalFont.data(for: spec)
+            .write(to: root.appendingPathComponent("Placeholder-B.ttf"))
+
+        let database = try LibraryDatabase(inMemory: true)
+        _ = try await LibraryScanner(database: database).scan(folder: root)
+
+        #expect(try database.counts().files == 2)
+        #expect(try database.snapshot().faceCount == 0)
+        #expect(try database.problemCounts().duplicates == 0)
+        #expect(try database.problemFiles().isEmpty)
+    }
+
     @Test("canonical paths resolve the /var firmlink")
     func canonicalPaths() {
         let path = FileManager.default.temporaryDirectory.path

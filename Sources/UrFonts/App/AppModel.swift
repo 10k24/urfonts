@@ -59,6 +59,7 @@ enum FaceActivationState: Equatable {
     case installed
     case missing
     case cloud
+    case alternate(preferredPath: String)
     case blocked(ownerPath: String)
 }
 
@@ -1346,33 +1347,15 @@ final class AppModel {
     }
 
     func familyActivation(_ family: CatalogFamily) -> FamilyActivation {
-        let faces = snapshot.faces(in: family)
-        let present = faces.filter { $0.fileStatus == "ok" }
+        let faces = Array(snapshot.faces(in: family))
+        let preferredIDs = Set(family.preferredFaceIDs)
+        let preferred = faces.filter { preferredIDs.contains($0.id) }
+        let present = preferred.filter { $0.fileStatus == "ok" }
         guard !present.isEmpty else {
-            return faces.contains { $0.fileStatus == "cloud" } ? .cloud : .missing
+            return preferred.contains { $0.fileStatus == "cloud" } ? .cloud : .missing
         }
         let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
         guard !activatable.isEmpty else { return .installed }
-
-        if family.hasDuplicatePostScriptNames {
-            guard let preferred = representativeFace(for: family) else {
-                return .missing
-            }
-            switch faceActivationState(preferred) {
-            case .active:
-                return .all
-            case .installed:
-                return .installed
-            case .missing:
-                return .missing
-            case .cloud:
-                return .cloud
-            case .blocked(let owner):
-                return .blocked(ownerPath: owner)
-            case .available:
-                return .none
-            }
-        }
 
         let active = activatable.reduce(0) { count, face in
             count + (activeFaceIDs.contains(face.id) ? 1 : 0)
@@ -1406,6 +1389,14 @@ final class AppModel {
         if activeFaceIDs.contains(face.id) {
             return .active
         }
+        if let family = snapshot.family(id: face.familyKey),
+           !family.preferredFaceIDs.contains(face.id),
+           let preferred = snapshot.faces(in: family).first(where: {
+               family.preferredFaceIDs.contains($0.id)
+                   && $0.styleKey == face.styleKey
+           }) {
+            return .alternate(preferredPath: preferred.path)
+        }
         if let owner = activePostScriptOwners[face.postscriptName.lowercased()],
            owner != face.path {
             return .blocked(ownerPath: owner)
@@ -1425,13 +1416,15 @@ final class AppModel {
         case .cloud:
             status = "\((face.path as NSString).lastPathComponent) is not downloaded from cloud"
             return
+        case .alternate(let preferredPath):
+            status = "Alternate file; use \((preferredPath as NSString).lastPathComponent)"
+            return
         case .blocked(let owner):
             status = "PostScript name is in use by \(owner)"
             return
         case .available, .active:
             break
         }
-
         let target = ActivationTarget(
             faceID: face.id,
             path: face.path,
@@ -1455,33 +1448,43 @@ final class AppModel {
     func toggle(_ family: CatalogFamily) async {
         guard let activationEngine else { return }
         let faces = Array(snapshot.faces(in: family))
-        let present = faces.filter { $0.fileStatus == "ok" }
+        let preferredIDs = Set(family.preferredFaceIDs)
+        let preferred = faces.filter { preferredIDs.contains($0.id) }
+        let present = preferred.filter { $0.fileStatus == "ok" }
         guard !present.isEmpty else {
             status = "No readable files in \(family.name)"
             return
         }
         let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
-
-        // Duplicate PostScript groups have no single family-level meaning.
-        // Toggle the one file in context.
-        if family.hasDuplicatePostScriptNames {
-            guard let preferred = representativeFace(for: family) else {
-                status = "No readable file in \(family.name)"
-                return
-            }
-            await toggle(face: preferred)
-            return
-        }
-
         guard !activatable.isEmpty else {
             status = "\(family.name) is installed"
             return
         }
+
         let state = familyActivation(family)
+
+        // An alternate file can hold the style's PostScript name from an older
+        // per-file toggle. Clear those before activating the preferred files.
+        if state != .all {
+            let activeAlternates = faces.filter {
+                !preferredIDs.contains($0.id) && activeFaceIDs.contains($0.id)
+            }
+            if !activeAlternates.isEmpty {
+                _ = await activationEngine.deactivate(activeAlternates.map {
+                    ActivationTarget(
+                        faceID: $0.id,
+                        path: $0.path,
+                        postscriptName: $0.postscriptName
+                    )
+                })
+                refreshActive()
+            }
+        }
+
         let targetsFaces: [CatalogFace]
         switch state {
         case .all:
-            targetsFaces = activatable.filter { activeFaceIDs.contains($0.id) }
+            targetsFaces = faces.filter { activeFaceIDs.contains($0.id) }
         case .none, .partial:
             targetsFaces = activatable.filter {
                 faceActivationState($0) == .available
@@ -2233,19 +2236,22 @@ final class AppModel {
     func representativeFace(for family: CatalogFamily) -> CatalogFace? {
         let readable = snapshot.faces(in: family).filter { $0.fileStatus == "ok" }
         guard !readable.isEmpty else { return nil }
+        let preferred = Set(family.preferredFaceIDs)
         let scoped: [CatalogFace]
         if let path = selectedFolderPath {
             scoped = readable.filter { LibraryPath.isInside($0.path, root: path) }
         } else {
             scoped = []
         }
-        let pool = scoped.isEmpty ? readable : scoped
-        if let active = pool.first(where: { activeFaceIDs.contains($0.id) }) {
+        let base = scoped.isEmpty ? readable : scoped
+        let pool = base.filter { preferred.contains($0.id) }
+        let candidates = pool.isEmpty ? base : pool
+        if let active = candidates.first(where: { activeFaceIDs.contains($0.id) }) {
             return active
         }
-        return pool.first { !$0.isItalic && $0.weightClass == 400 }
-            ?? pool.first { !$0.isItalic }
-            ?? pool.first
+        return candidates.first { !$0.isItalic && $0.weightClass == 400 }
+            ?? candidates.first { !$0.isItalic }
+            ?? candidates.first
     }
 
     private var selectedFolderPath: String? {

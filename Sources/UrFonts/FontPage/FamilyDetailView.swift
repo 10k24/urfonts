@@ -161,6 +161,7 @@ struct FamilyDetailView: View {
                     let fileName = (face.path as NSString).lastPathComponent
                     let isCloud = face.fileStatus == "cloud"
                     let isMissing = face.fileStatus != "ok" && !isCloud
+                    let alternatePath = alternatePath(for: state)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 14) {
                             FaceActivationControl(
@@ -199,6 +200,14 @@ struct FamilyDetailView: View {
                                     .font(.caption)
                                     .foregroundStyle(.orange)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                            } else if let alternatePath {
+                                Text(
+                                    "Alternate file; use "
+                                        + (alternatePath as NSString).lastPathComponent
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
                                 FontFilePreview(
                                     face: face,
@@ -233,6 +242,14 @@ struct FamilyDetailView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
                                 .padding(.leading, 32)
+                        } else if let alternatePath {
+                            Text(
+                                "Alternate file; use "
+                                    + (alternatePath as NSString).lastPathComponent
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 32)
                         }
 
                         if let owner = blockedOwner(of: state) {
@@ -253,6 +270,13 @@ struct FamilyDetailView: View {
             }
             .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 8))
         }
+    }
+
+    private func alternatePath(for state: FaceActivationState) -> String? {
+        if case .alternate(let path) = state {
+            return path
+        }
+        return nil
     }
 
     private func blockedOwner(of state: FaceActivationState) -> String? {

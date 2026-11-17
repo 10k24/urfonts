@@ -205,6 +205,13 @@ enum Messages {
             defaultValue: "Not downloaded from cloud",
             comment: "Activation help"
         )
+        static func alternate(preferredPath: String) -> String {
+            String(
+                localized: "activation.alternate",
+                defaultValue: "Alternate file; use \((preferredPath as NSString).lastPathComponent)",
+                comment: "Activation help for a duplicate style file"
+            )
+        }
         static let downloadAndActivate = String(
             localized: "activation.downloadAndActivate",
             defaultValue: "Download and activate",

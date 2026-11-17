@@ -28,6 +28,29 @@ public struct CatalogFace: Sendable, Identifiable, Equatable {
     public let scriptMask: UInt64
     /// Scripts whose complete sample text is covered by this face.
     public let previewMask: UInt64
+
+    /// Identity of a visual style inside a family. OTF and TTF copies of the
+    /// same style collapse to one key even when their PostScript names differ.
+    public var styleKey: String {
+        let styleName = style
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "normal", with: "regular")
+        return "\(styleName)\u{1}\(weightClass)\u{1}\(widthClass)\u{1}\(isItalic ? 1 : 0)"
+    }
+}
+
+/// Name-table values used by some web subsets instead of a real identity.
+/// Fontshare exports, for example, write the literal `false` for ids 1, 4 and 6.
+enum PlaceholderFontName {
+    private static let values: Set<String> = [
+        "false", "none", "null", "undefined", "untitled", "nil",
+    ]
+
+    static func isPlaceholder(_ name: String) -> Bool {
+        let lower = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lower.isEmpty || values.contains(lower)
+    }
 }
 
 public enum FontLocation {
@@ -86,14 +109,19 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     /// Faces whose file is missing or unreadable. They remain in the snapshot
     /// so collections survive an offline volume.
     public let missingFaceCount: Int
+    /// Distinct visual styles after collapsing alternate files. This is the
+    /// number the family checkbox activates.
+    public let styleCount: Int
+    /// One preferred face per style group. Alternate files stay in the sheet
+    /// but are not part of the family toggle.
+    public let preferredFaceIDs: [String]
 
     public var faceCount: Int { faceRange.count }
 
-    /// Display label for the family count. Duplicate groups read as files;
-    /// ordinary families read as styles. Missing files are explicit.
+    /// Display label for the family count. The number matches what the family
+    /// checkbox activates, not how many files happen to exist.
     public var countLabel: String {
-        let unit = hasDuplicatePostScriptNames ? "file" : "style"
-        var text = "\(faceCount) \(unit)\(faceCount == 1 ? "" : "s")"
+        var text = "\(styleCount) style\(styleCount == 1 ? "" : "s")"
         if missingFaceCount > 0 {
             text += " · \(missingFaceCount) missing"
         }
@@ -218,6 +246,12 @@ public struct CatalogSnapshot: Sendable {
             var allSystem: Bool
         }
 
+        // Web subsets sometimes carry "false" instead of a name-table identity.
+        // They are not browsable faces and must not create duplicate groups.
+        let input = input.filter {
+            !PlaceholderFontName.isPlaceholder($0.postscriptName)
+        }
+
         // Family display metadata decides both the visible name and sort order.
         // System fonts must sort by their dot-stripped name, not by the raw key.
         var meta: [String: Meta] = [:]
@@ -321,11 +355,29 @@ public struct CatalogSnapshot: Sendable {
             parts.append(searchFold(face.style))
             parts.append(searchFold(face.postscriptName))
         }
-        let readable = faces[range].filter { $0.fileStatus == "ok" }
+
+        var groups: [String: [CatalogFace]] = [:]
+        groups.reserveCapacity(range.count)
+        for face in faces[range] {
+            groups[face.styleKey, default: []].append(face)
+        }
+        var preferredFaceIDs: [String] = []
+        preferredFaceIDs.reserveCapacity(groups.count)
+        var seenStyles = Set<String>()
+        for face in faces[range] where seenStyles.insert(face.styleKey).inserted {
+            if let preferred = preferredFace(in: groups[face.styleKey] ?? [face]) {
+                preferredFaceIDs.append(preferred.id)
+            }
+        }
+
+        let familyFaces = Array(faces[range])
+        let readable = familyFaces.filter { $0.fileStatus == "ok" }
         let scriptMask = readable.reduce(UInt64(0)) { $0 | $1.scriptMask }
         let previewMask = readable.reduce(UInt64(0)) { $0 | $1.previewMask }
-        let postscriptNames = Set(readable.map { $0.postscriptName.lowercased() })
-        let missingCount = faces[range].reduce(0) {
+        let postscriptNames = Set(
+            readable.map { $0.postscriptName.lowercased() }
+        )
+        let missingCount = familyFaces.reduce(0) {
             $0 + ($1.fileStatus != "ok" && $1.fileStatus != "cloud" ? 1 : 0)
         }
         return CatalogFamily(
@@ -337,8 +389,44 @@ public struct CatalogSnapshot: Sendable {
             scriptMask: scriptMask,
             previewMask: previewMask,
             hasDuplicatePostScriptNames: postscriptNames.count < readable.count,
-            missingFaceCount: missingCount
+            missingFaceCount: missingCount,
+            styleCount: groups.count,
+            preferredFaceIDs: preferredFaceIDs
         )
+    }
+
+    /// One file per style. Prefer readable files, non-WEB paths, then outline
+    /// formats, then a stable path order. The alternate files stay in the sheet.
+    private static func preferredFace(in group: [CatalogFace]) -> CatalogFace? {
+        group.sorted { left, right in
+            if left.fileStatus != right.fileStatus {
+                return left.fileStatus == "ok"
+            }
+            let leftWeb = left.path.lowercased().contains("/web/")
+            let rightWeb = right.path.lowercased().contains("/web/")
+            if leftWeb != rightWeb {
+                return !leftWeb
+            }
+            let leftRank = outlineRank(left.path)
+            let rightRank = outlineRank(right.path)
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+            return left.path.localizedStandardCompare(right.path) == .orderedAscending
+        }.first
+    }
+
+    private static func outlineRank(_ path: String) -> Int {
+        switch URL(fileURLWithPath: path).pathExtension.lowercased() {
+        case "otf", "otc":
+            return 0
+        case "ttf":
+            return 1
+        case "ttc":
+            return 2
+        default:
+            return 3
+        }
     }
 
     /// A name with no letters or digits tells the user nothing and must not

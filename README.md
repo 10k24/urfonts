@@ -24,7 +24,8 @@ published. Build from source with Xcode 26 or newer.
 - Global activation through CoreText, with a journal and launch reconciliation.
   Installed system fonts stay locked; duplicate PostScript names are blocked.
 - Font sheet with every style, per-style activation, absolute paths, variable
-  axes, OpenType feature tags, glyph map and file info.
+  axes, OpenType feature tags, glyph map and file info. Family counts match the
+  styles the checkbox activates; duplicate files are marked as alternates.
 - Collections, sorted alphabetically, with bulk activation. Saved preview
   samples with text, size and colors.
 - Warnings for duplicate PostScript names and missing files. Cleanup removes

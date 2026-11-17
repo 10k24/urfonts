@@ -51,6 +51,11 @@ versions may change behavior.
 
 ### Fixed
 
+- Family checkboxes activate every unique style. Duplicate OTF/TTF and WEB files
+  collapse into one style with a preferred file; alternates remain visible but
+  disabled. Placeholder name tables such as `false` no longer create fake
+  families or block family activation.
+
 - Online-only cloud files are skipped without creating warning rows; previously
   indexed files that become online-only remain visible as unavailable.
 - Network, timeout and offline failures show a retryable message instead of a

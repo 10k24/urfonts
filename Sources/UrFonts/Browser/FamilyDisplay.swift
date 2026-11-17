@@ -56,9 +56,7 @@ struct FamilyDisplay: Identifiable, Equatable {
             id: family.id,
             name: family.name,
             countLabel: family.countLabel,
-            shortCount: family.hasDuplicatePostScriptNames
-                ? "\(family.faceCount) files"
-                : "\(family.faceCount)",
+            shortCount: "\(family.styleCount)",
             hasVariableFace: family.hasVariableFace,
             warning: reasons.isEmpty ? nil : reasons.joined(separator: ". ")
         )

@@ -135,6 +135,13 @@ struct FaceActivationControl: View {
                 help: Messages.Activation.cloud,
                 action: nil
             )
+        case .alternate(let preferredPath):
+            ActivationGlyph(
+                symbol: "square",
+                tint: nil,
+                help: Messages.Activation.alternate(preferredPath: preferredPath),
+                action: nil
+            )
         case .blocked(let ownerPath):
             ActivationGlyph(
                 symbol: "square",

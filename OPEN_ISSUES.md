@@ -296,15 +296,6 @@ features are listed too, so the gap is explicit rather than implied.
 - **FontBase handoff notes.** Document deactivating all fonts in FontBase,
   quitting it, and ignoring its cache folder in Ur Fonts before activating the
   same fonts, to avoid duplicate PostScript registrations.
-- **OTF and TTF for the same font.** A family can ship as both CFF `.otf` and
-  TrueType `.ttf` with the same style. Decide the product rule before adding
-  special cases: group them as one selectable face, prefer one format, or list
-  both. If one is preferred, make the choice deterministic and visible (outline
-  format, file age, folder, or an explicit user choice). Keep activation,
-  collections and the journal keyed by file path. If both files are active,
-  fontd may hold two registrations; detect that and warn before activating the
-  second. This is separate from the duplicate PostScript warning because the
-  names can differ.
 - **Sparkle updates.** In-app update framework, hosted appcast and EdDSA key
   management. Deferred until there is a distribution feed and a way to hold the
   signing key outside the repo.
@@ -439,6 +430,11 @@ features are listed too, so the gap is explicit rather than implied.
 - **About panel.** Studio byline, version, build number, copyright and a
   repository link in the standard macOS About panel; local builds also show a
   development timestamp.
+- **Style dedupe.** Family counts are unique styles, not files. One preferred
+  file per style (readable, non-WEB, OTF then TTF, path order); the family
+  checkbox activates all preferred styles. Alternates are marked in the sheet.
+  Placeholder name tables (`false`, `none`, …) are ignored, which removes the
+  bogus Fontshare WEB families.
 - **Repo hygiene.** No fonts, databases, signing material or generated icons are
   tracked; `scripts/ci.sh` rejects forbidden files.
 - **Real-window perf capture.** `scripts/perf-window.sh` records App Launch and

@@ -1032,6 +1032,8 @@ public final class LibraryDatabase: Sendable {
                     SELECT lower(f.postscript_name)
                     FROM face f JOIN file ON file.id = f.file_id
                     WHERE f.postscript_name != '' AND file.status = 'ok'
+                      AND lower(f.postscript_name) NOT IN
+                          ('false', 'none', 'null', 'undefined', 'untitled', 'nil')
                     GROUP BY lower(f.postscript_name)
                     HAVING COUNT(DISTINCT f.file_id) > 1
                 )
@@ -1054,11 +1056,15 @@ public final class LibraryDatabase: Sendable {
                 JOIN file ON file.id = f.file_id
                 WHERE f.postscript_name != ''
                   AND file.status = 'ok'
+                  AND lower(f.postscript_name) NOT IN
+                      ('false', 'none', 'null', 'undefined', 'untitled', 'nil')
                   AND lower(f.postscript_name) IN (
                       SELECT lower(f2.postscript_name)
                       FROM face f2 JOIN file file2 ON file2.id = f2.file_id
                       WHERE file2.status = 'ok'
                         AND f2.postscript_name != ''
+                        AND lower(f2.postscript_name) NOT IN
+                            ('false', 'none', 'null', 'undefined', 'untitled', 'nil')
                       GROUP BY lower(f2.postscript_name)
                       HAVING COUNT(DISTINCT f2.file_id) > 1
                   )

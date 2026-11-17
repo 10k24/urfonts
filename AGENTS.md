@@ -80,13 +80,21 @@ These are the facts the design rests on. Verify before changing any of them.
   Check `fileStatus == "ok"` first: a missing FontBase copy must show as missing,
   not installed. Skip installed files in the engine and show a gray checked
   square at the same size as the activation square; never unregister them.
-- Toggling is family-level for ordinary families. A family with duplicate
-  PostScript names has no single family-level meaning: its checkbox toggles the
-  preferred file in context, and the sheet exposes one checkbox per file. If
-  that preferred file is blocked by an active owner elsewhere, the row shows a
-  disabled square and the sheet names the owner path.
-- The representative face prefers a readable file in the current folder or
-  subfolder, then an active face, then a regular face. Never select a missing
+- Toggling is family-level over unique styles, not files. Faces collapse by a
+  style key (normalized style name, weight, width, italic). One preferred file
+  per style is chosen deterministically: readable, then non-WEB, then OTF/OTC,
+  then TTF, then path order. The family checkbox activates or deactivates every
+  preferred style. Alternate files stay in the sheet and are disabled as
+  alternates, never silently activated alongside the preferred file.
+- Duplicate PostScript names across different style groups still warn and block:
+  the sheet names the active owner path. A same-style OTF/TTF pair does not get
+  a family-level fallback; the preferred file is the one that activates.
+- Name tables that contain only placeholder identity (`false`, `none`, `null`,
+  `undefined`, `untitled`, `nil`) are not faces. Fontshare WEB exports are the
+  known case; filter them when building the snapshot so they cannot create a
+  fake family or duplicate style groups.
+- The representative face prefers a preferred style file in the current folder
+  or subfolder, then an active face, then a regular face. Never select a missing
   file for the row or sheet preview.
 - Preview never registers anything. `CTFontManagerCreateFontDescriptorsFromURL`
   plus `CTFontCreateWithFontDescriptor` is enough, and it is process-local.
