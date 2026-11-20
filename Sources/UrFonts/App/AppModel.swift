@@ -1300,14 +1300,6 @@ final class AppModel {
         return loaded
     }
 
-    func sampleText(for family: CatalogFamily) -> String {
-        family.previewText(userText: sampleText)
-    }
-
-    func sampleText(for face: CatalogFace) -> String {
-        FontScript.previewText(mask: face.previewMask, userText: sampleText)
-    }
-
     /// Long presets need a third line. Row height stays uniform across the list;
     /// only a sample change alters it.
     /// Lines a preset is allowed to use. Independent of the row height: a

@@ -38,6 +38,14 @@ public struct CatalogFace: Sendable, Identifiable, Equatable {
             .replacingOccurrences(of: "normal", with: "regular")
         return "\(styleName)\u{1}\(weightClass)\u{1}\(widthClass)\u{1}\(isItalic ? 1 : 0)"
     }
+
+    /// Sample text this face can draw. The drawn face owns the choice: a family
+    /// can mix a Latin-only preview file with an installed face that covers a
+    /// distinctive script, so a family-wide mask would select text the preview
+    /// cannot render.
+    public func previewText(userText: String) -> String {
+        FontScript.previewText(mask: previewMask, userText: userText)
+    }
 }
 
 /// Name-table values used by some web subsets instead of a real identity.
@@ -101,8 +109,6 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     public let searchBlob: Data
     public let hasVariableFace: Bool
     public let scriptMask: UInt64
-    /// Scripts whose complete sample text is covered by the readable faces.
-    public let previewMask: UInt64
     /// True when sibling files report the same PostScript name, so only one of
     /// them can be active at a time.
     public let hasDuplicatePostScriptNames: Bool
@@ -126,11 +132,6 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
             text += " · \(missingFaceCount) missing"
         }
         return text
-    }
-
-    /// Script-aware preview, falling back to the user's sample.
-    public func previewText(userText: String) -> String {
-        FontScript.previewText(mask: previewMask, userText: userText)
     }
 
     /// Face used for a family row or sheet preview. Purely file-driven:
@@ -402,7 +403,6 @@ public struct CatalogSnapshot: Sendable {
         let familyFaces = Array(faces[range])
         let readable = familyFaces.filter { $0.fileStatus == "ok" }
         let scriptMask = readable.reduce(UInt64(0)) { $0 | $1.scriptMask }
-        let previewMask = readable.reduce(UInt64(0)) { $0 | $1.previewMask }
         let postscriptNames = Set(
             readable.map { $0.postscriptName.lowercased() }
         )
@@ -416,7 +416,6 @@ public struct CatalogSnapshot: Sendable {
             searchBlob: Data(parts.joined(separator: "\u{1}").utf8),
             hasVariableFace: readable.contains(where: \.isVariable),
             scriptMask: scriptMask,
-            previewMask: previewMask,
             hasDuplicatePostScriptNames: postscriptNames.count < readable.count,
             missingFaceCount: missingCount,
             styleCount: groups.count,

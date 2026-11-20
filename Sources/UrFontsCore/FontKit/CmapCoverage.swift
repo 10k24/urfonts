@@ -65,8 +65,8 @@ public enum FontScript: UInt64, CaseIterable, Sendable {
         return nil
     }
 
-    /// Preview text for a family: script-specific when the family has a
-    /// distinctive script, otherwise the user's sample.
+    /// Preview text for a face: script-specific when the face has a distinctive
+    /// script, otherwise the user's sample.
     public static func previewText(mask: UInt64, userText: String) -> String {
         preferredSample(in: mask)?.sampleText ?? userText
     }

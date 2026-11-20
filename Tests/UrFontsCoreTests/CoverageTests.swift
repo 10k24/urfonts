@@ -40,7 +40,10 @@ struct CoverageTests {
         let snapshot = try database.snapshot()
         let family = try #require(snapshot.families.first)
         #expect(family.scriptMask & FontScript.latin.rawValue != 0)
-        #expect(family.previewText(userText: "Sample") == "Sample")
+        let face = try #require(
+            family.representativeFace(in: snapshot.faces(in: family))
+        )
+        #expect(face.previewText(userText: "Sample") == "Sample")
     }
 
     @Test("script samples prefer distinctive scripts")

@@ -71,3 +71,5 @@ versions may change behavior.
 - A file owned by two overlapping roots is moved to one folder rather than
   failing the scan.
 - Preview rows no longer reload a font when only the point size changes.
+- Family previews no longer show tofu when a sibling file covers a script the
+  preview file does not. Sample text follows the face being drawn.

@@ -118,7 +118,8 @@ struct FamilyDetailView: View {
                     face: previewFace,
                     axes: previewFace?.axes ?? [],
                     axisValues: axisValues,
-                    text: model.sampleText(for: family),
+                    text: previewFace?.previewText(userText: model.sampleText)
+                        ?? model.sampleText,
                     textColor: model.textColor
                 )
                 if previewFace == nil {
@@ -211,7 +212,7 @@ struct FamilyDetailView: View {
                             } else {
                                 FontFilePreview(
                                     face: face,
-                                    text: model.sampleText(for: face),
+                                    text: face.previewText(userText: model.sampleText),
                                     textColor: model.textColor
                                 )
                                 .frame(height: 46)

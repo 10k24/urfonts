@@ -69,13 +69,44 @@ struct CatalogSnapshotTests {
         #expect(snapshot.families[0].preferredFaceIDs == ["real"])
     }
 
+    @Test("preview text follows the drawn face, not a sibling's coverage")
+    func representativePreviewText() {
+        let otf = face(
+            id: "otf",
+            family: "Test Family",
+            style: "Regular",
+            postscript: "TestFamily-Regular",
+            path: "/fonts/TestFamily-Regular.otf"
+        )
+        let installed = face(
+            id: "installed",
+            family: "Test Family",
+            style: "Regular",
+            postscript: "TestFamily-Regular",
+            path: "/Users/test/Library/Fonts/TestFamily-Regular.ttf",
+            previewMask: FontScript.devanagari.rawValue
+        )
+
+        let snapshot = CatalogSnapshot.build(faces: [installed, otf])
+        let family = snapshot.families[0]
+        let representative = family.representativeFace(in: snapshot.faces(in: family))
+
+        #expect(representative?.id == "otf")
+        #expect(representative?.previewText(userText: "Sample") == "Sample")
+        #expect(
+            installed.previewText(userText: "Sample")
+                == FontScript.devanagari.sampleText
+        )
+    }
+
     private func face(
         id: String,
         family: String,
         style: String,
         postscript: String,
         path: String,
-        weight: Int = 400
+        weight: Int = 400,
+        previewMask: UInt64 = 0
     ) -> CatalogFace {
         CatalogFace(
             id: id,
@@ -101,7 +132,7 @@ struct CatalogSnapshotTests {
             vendorID: nil,
             embedding: nil,
             scriptMask: 0,
-            previewMask: 0
+            previewMask: previewMask
         )
     }
 }

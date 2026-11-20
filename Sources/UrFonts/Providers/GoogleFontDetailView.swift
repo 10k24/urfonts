@@ -67,7 +67,7 @@ struct GoogleFontDetailView: View {
             if let face = downloadedFace {
                 FontFilePreview(
                     face: face,
-                    text: model.sampleText(for: face),
+                    text: face.previewText(userText: model.sampleText),
                     textColor: model.textColor,
                     size: 66
                 )
@@ -232,7 +232,7 @@ private struct GoogleStylePreview: View {
             }) {
                 FontFilePreview(
                     face: face,
-                    text: model.sampleText(for: face),
+                    text: face.previewText(userText: model.sampleText),
                     textColor: model.textColor,
                     size: size
                 )

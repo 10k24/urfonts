@@ -366,6 +366,10 @@ These are the facts the design rests on. Verify before changing any of them.
 - Script-aware previews prefer a distinctive script (CJK, Hangul, Kana, Arabic,
   Hebrew, Devanagari, Thai) only when a readable face covers every character of
   that script's sample (`preview_mask`). Partial coverage keeps the user sample.
+  The sample is chosen from the face being drawn, never from a family-wide union:
+  a family can mix a Latin-only preferred file with an installed face that covers
+  Devanagari, and the union would select a sample the preview file cannot render.
+  Sample text enters the UI only through `CatalogFace.previewText(userText:)`.
   `script_mask` remains the any-coverage filter; missing faces contribute to
   neither mask. This prevents CoreText fallback from selecting an Arabic sample
   the font only partly covers.

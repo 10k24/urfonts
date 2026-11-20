@@ -120,11 +120,12 @@ struct BrowserView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(model.visibleFamilies) { family in
+                            let face = model.representativeFace(for: family)
                             FamilyRow(
                                 display: FamilyDisplay(family: family),
-                                preview: model.representativeFace(for: family)
-                                    .map { PreviewSource(face: $0) },
-                                sampleText: model.sampleText(for: family),
+                                preview: face.map { PreviewSource(face: $0) },
+                                sampleText: face?.previewText(userText: model.sampleText)
+                                    ?? model.sampleText,
                                 sampleSize: model.sampleSize,
                                 textColor: model.textColor,
                                 backgroundColor: model.backgroundColor,
@@ -152,11 +153,12 @@ struct BrowserView: View {
                         spacing: 12
                     ) {
                         ForEach(model.visibleFamilies) { family in
+                            let face = model.representativeFace(for: family)
                             FamilyTile(
                                 display: FamilyDisplay(family: family),
-                                preview: model.representativeFace(for: family)
-                                    .map { PreviewSource(face: $0) },
-                                sampleText: model.sampleText(for: family),
+                                preview: face.map { PreviewSource(face: $0) },
+                                sampleText: face?.previewText(userText: model.sampleText)
+                                    ?? model.sampleText,
                                 sampleSize: model.sampleSize,
                                 textColor: model.textColor,
                                 backgroundColor: model.backgroundColor,
