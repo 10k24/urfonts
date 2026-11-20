@@ -41,6 +41,9 @@ versions may change behavior.
   persisted across launches.
 - Headless scenarios that render real views offscreen and prove the process never
   takes focus.
+- Font sheet style rows have a context menu for copying the filename, PostScript
+  name or full path, and revealing the file in Finder. The Info actions include
+  Copy Family Name.
 - New UR mark app icon with a dark background, compiled into `Assets.car` and the
   legacy `.icns`.
 - CI gate covering tests, a Release build, fixtures, CLI round trip, headless
@@ -61,6 +64,11 @@ versions may change behavior.
   collapse into one style with a preferred file; alternates remain visible but
   disabled. Placeholder name tables such as `false` no longer create fake
   families or block family activation.
+- Library files that share a PostScript name now activate together. An installed
+  font that already owns the name is an orange warning, not a block.
+- A variable file stays activatable when a static copy is preferred. Activating
+  it replaces the family's static styles and exposes distinct named-instance
+  PostScript names.
 - Activating a family no longer changes its row preview. Representative faces
   are chosen from files only, preferring the upright weight closest to 400.
 - Online-only cloud files are skipped without creating warning rows; previously
@@ -78,3 +86,5 @@ versions may change behavior.
 - Uniform list row height accounts for script samples. A short user sample no
   longer clips Hangul, Devanagari and other script previews at large sizes.
 - OpenType feature tags are read off the main actor when the family sheet opens.
+- Cmd+Q quits while any sheet is open. SwiftUI sheets prevent app termination
+  by default; each sheet opts out with `allowsAppTermination()` (macOS 15.4+).

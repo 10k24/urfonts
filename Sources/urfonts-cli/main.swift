@@ -54,7 +54,7 @@ func databaseURL(_ arguments: inout [String]) throws -> URL {
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
-    print("usage: urfonts-cli <index|scan-changes|search|stats|inspect|activate|deactivate|scope|folders|watch-folder|unwatch-folder> [options] <path>...")
+    print("usage: urfonts-cli <index|scan-changes|search|stats|google-catalog|google-download|index-coverage|folders|watch-folder|unwatch-folder|split-folder|remove-folder|inspect|activate|deactivate|scope|version> [options] <path>...")
     exit(1)
 }
 arguments.removeFirst()

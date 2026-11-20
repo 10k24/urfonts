@@ -5,7 +5,7 @@ activate fonts in place, and keep folders in sync without copying or modifying a
 font file.
 
 Built for libraries with tens of thousands of fonts: family-first rows,
-fixed-height CoreText previews, in-place activation and a delta scanner.
+uniform-height CoreText previews, in-place activation and a delta scanner.
 
 [![CI](https://github.com/10k24/urfonts/actions/workflows/ci.yml/badge.svg)](https://github.com/10k24/urfonts/actions/workflows/ci.yml)
 
@@ -22,10 +22,16 @@ published. Build from source with Xcode 26 or newer.
 - Preview in the font itself: sample text, presets, size and colors. Unsupported
   characters show `.notdef`; previews never substitute another font.
 - Global activation through CoreText, with a journal and launch reconciliation.
-  Installed system fonts stay locked; duplicate PostScript names are blocked.
+  Installed system fonts stay locked; installed PostScript conflicts are marked
+  orange, while duplicate names across library files can activate together.
+  Variable font files are activatable even when a static copy is preferred;
+  activating one replaces the family's static styles and exposes its named
+  instances.
 - Font sheet with every style, per-style activation, absolute paths, variable
   axes, OpenType feature tags, glyph map and file info. Family counts match the
-  styles the checkbox activates; duplicate files are marked as alternates.
+  styles the checkbox activates; same-style static duplicates are marked as
+  alternates. Right-click a style to copy its filename, PostScript name or path,
+  or reveal it in Finder. Info actions include Copy Family Name.
 - Collections, sorted alphabetically, with bulk activation. Saved preview
   samples with text, size and colors.
 - Warnings for duplicate PostScript names and missing files. Cleanup removes
@@ -93,6 +99,8 @@ urfonts-cli google-download Inter
 ## Docs
 
 - `docs/ARCHITECTURE.md` — modules and data flow
+- `docs/PERF.md` — real-window performance protocol
+- `docs/RELEASING.md` — release checklist
 - `CONTRIBUTING.md` — setup, gate, style and support
 - `CHANGELOG.md` — notable changes
 - `BENCH.md` — measured performance

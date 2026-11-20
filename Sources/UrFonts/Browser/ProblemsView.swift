@@ -27,9 +27,7 @@ struct ProblemsView: View {
                 List {
                     if !model.duplicates.isEmpty {
                         DisclosureGroup(isExpanded: $duplicatesExpanded) {
-                            Text("These files share a PostScript name. Activating both "
-                                + "can make apps use only one of them. Trial fonts with "
-                                + "placeholder names such as \"false\" appear here too.")
+                            Text(Messages.Problems.duplicatesExplanation)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 4)
@@ -40,7 +38,7 @@ struct ProblemsView: View {
                         } label: {
                             warningLabel(
                                 title: Messages.Problems.duplicates,
-                                detail: "More than one file claims the same name",
+                                detail: Messages.Problems.duplicatesDetail,
                                 systemImage: "doc.on.doc",
                                 count: model.duplicates.count
                             )

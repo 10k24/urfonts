@@ -60,13 +60,6 @@ struct ActivationDot: View {
                 help: Messages.Activation.cloud,
                 action: nil
             )
-        case .blocked(let ownerPath):
-            ActivationGlyph(
-                symbol: "square",
-                tint: nil,
-                help: Messages.Activation.blocked(ownerPath: ownerPath),
-                action: nil
-            )
         case .none:
             ActivationGlyph(
                 symbol: "square",
@@ -92,8 +85,8 @@ struct ActivationDot: View {
     }
 }
 
-/// Per-file control in the font sheet. A duplicate PostScript name is visibly
-/// blocked instead of failing after the click.
+/// Per-file control in the font sheet. An installed font with the same
+/// PostScript name is a visible warning, not a block.
 struct FaceActivationControl: View {
     let state: FaceActivationState
     let action: () -> Void
@@ -142,12 +135,19 @@ struct FaceActivationControl: View {
                 help: Messages.Activation.alternate(preferredPath: preferredPath),
                 action: nil
             )
-        case .blocked(let ownerPath):
+        case .variableAlternate:
             ActivationGlyph(
                 symbol: "square",
-                tint: nil,
-                help: Messages.Activation.blocked(ownerPath: ownerPath),
-                action: nil
+                tint: .secondary,
+                help: Messages.Activation.variableAlternate,
+                action: action
+            )
+        case .systemConflict(let ownerPath):
+            ActivationGlyph(
+                symbol: "square",
+                tint: .orange,
+                help: Messages.Activation.systemConflict(ownerPath: ownerPath),
+                action: action
             )
         }
     }

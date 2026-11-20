@@ -44,8 +44,8 @@ public struct ReconcileOutcome: Sendable, Equatable {
 ///
 /// Rules:
 /// - Fonts in a standard Fonts folder are installed, not ours to toggle.
-/// - Duplicate PostScript names are refused, because font matching becomes
-///   ambiguous and fontd does not police it.
+/// - Duplicate PostScript names are allowed. fontd accepts multiple files with
+///   the same name; the UI warns when an installed font already owns it.
 /// - Every success is measured with `CTFontManagerGetScopeForURL`; the journal
 ///   only records what fontd confirms.
 public actor ActivationEngine {
@@ -58,9 +58,7 @@ public actor ActivationEngine {
     }
 
     public static func isInstalledPath(_ path: String) -> Bool {
-        path.hasPrefix("/System/Library/Fonts/")
-            || path.hasPrefix("/Library/Fonts/")
-            || path.hasPrefix(NSHomeDirectory() + "/Library/Fonts/")
+        FontLocation.isInstalledFont(path: path)
     }
 
     public func activate(
@@ -73,30 +71,11 @@ public actor ActivationEngine {
             .sorted { ($0.path, $0.faceID) < ($1.path, $1.faceID) }
 
         var accepted: [ActivationTarget] = []
-        var postscriptOwners: [String: String] = [:]
-
-        // Existing registrations claim their PostScript names first.
-        let active = (try? database.activationRecords()) ?? []
-        for record in active {
-            let key = record.postscriptName.lowercased()
-            if postscriptOwners[key] == nil {
-                postscriptOwners[key] = record.path
-            }
-        }
-
         for target in unique {
             if Self.isInstalledPath(target.path) {
                 outcome.installedSkipped += 1
                 continue
             }
-            let key = target.postscriptName.lowercased()
-            if let owner = postscriptOwners[key], owner != target.path {
-                outcome.failures.append(
-                    "\(target.postscriptName): duplicate PostScript name, already used by \((owner as NSString).lastPathComponent)"
-                )
-                continue
-            }
-            postscriptOwners[key] = target.path
             accepted.append(target)
         }
 

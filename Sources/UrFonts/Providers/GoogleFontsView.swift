@@ -58,6 +58,7 @@ struct GoogleFontsView: View {
         }
         .sheet(item: $detail) { family in
             GoogleFontDetailView(model: model, family: family)
+                .allowsAppTermination()
         }
     }
 

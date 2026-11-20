@@ -39,11 +39,10 @@ enum FamilyActivation: Equatable {
     case installed
     case missing
     case cloud
-    case blocked(ownerPath: String)
 
     var canToggle: Bool {
         switch self {
-        case .installed, .missing, .cloud, .blocked:
+        case .installed, .missing, .cloud:
             return false
         case .none, .partial, .all:
             return true
@@ -51,8 +50,8 @@ enum FamilyActivation: Equatable {
     }
 }
 
-/// Per-file state shown in the font sheet. A duplicate PostScript name is
-/// blocked, not merely rejected after the click.
+/// Per-file state shown in the font sheet. Alternates are disabled; a duplicate
+/// PostScript name owned by an installed font is a visible warning, not a block.
 enum FaceActivationState: Equatable {
     case available
     case active
@@ -60,7 +59,17 @@ enum FaceActivationState: Equatable {
     case missing
     case cloud
     case alternate(preferredPath: String)
-    case blocked(ownerPath: String)
+    case variableAlternate(preferredPath: String)
+    case systemConflict(ownerPath: String)
+
+    var canActivate: Bool {
+        switch self {
+        case .available, .systemConflict, .variableAlternate:
+            return true
+        case .active, .installed, .missing, .cloud, .alternate:
+            return false
+        }
+    }
 }
 
 struct FolderAddEntry: Identifiable, Sendable {
@@ -205,7 +214,7 @@ final class AppModel {
         }
     }
     var activeFaceIDs: Set<String> = []
-    var activePostScriptOwners: [String: String] = [:]
+    private var systemConflictByFamily: [String: String] = [:]
     var duplicateCount = 0
     var missingFileCount = 0
     var duplicates: [DuplicatePostScriptName] = []
@@ -443,6 +452,7 @@ final class AppModel {
                 try database.snapshot(fallbackFileNames: fallback)
             }.value
             self.snapshot = snapshot
+            systemConflictByFamily = Self.systemConflictOwners(in: snapshot)
             let ignored = (try? database.ignoredPaths()) ?? []
             if ignoredPaths != ignored {
                 ignoredPaths = ignored
@@ -889,8 +899,6 @@ final class AppModel {
             return .missing
         case .cloud:
             return .cloud
-        case .blocked(let owner):
-            return .blocked(ownerPath: owner)
         case .none, .partial:
             return .available
         }
@@ -934,18 +942,6 @@ final class AppModel {
             $0 + (activeFaceIDs.contains($1.id) ? 1 : 0)
         }
         if active == 0 {
-            let available = activatable.filter {
-                faceActivationState($0) == .available
-            }
-            if available.isEmpty,
-               let owner = activatable.compactMap({ face -> String? in
-                   if case .blocked(let owner) = faceActivationState(face) {
-                       return owner
-                   }
-                   return nil
-               }).first {
-                return .blocked(ownerPath: owner)
-            }
             return .none
         }
         return active == activatable.count ? .all : .partial
@@ -971,9 +967,9 @@ final class AppModel {
             targetsFaces = activatable.filter { activeFaceIDs.contains($0.id) }
         case .none, .partial:
             targetsFaces = activatable.filter {
-                faceActivationState($0) == .available
+                faceActivationState($0).canActivate
             }
-        case .installed, .missing, .cloud, .blocked:
+        case .installed, .missing, .cloud:
             return
         }
         guard !targetsFaces.isEmpty else {
@@ -1360,15 +1356,8 @@ final class AppModel {
     func refreshActive() {
         guard let database else { return }
         let updated = (try? database.activeFaceIDs()) ?? []
-        let records = (try? database.activationRecords()) ?? []
-        var owners: [String: String] = [:]
-        owners.reserveCapacity(records.count)
-        for record in records {
-            owners[record.postscriptName.lowercased()] = record.path
-        }
-        guard updated != activeFaceIDs || owners != activePostScriptOwners else { return }
+        guard updated != activeFaceIDs else { return }
         activeFaceIDs = updated
-        activePostScriptOwners = owners
         visibleCache = nil
         if selection == .active {
             rebuildVisible()
@@ -1392,25 +1381,44 @@ final class AppModel {
         let activatable = present.filter { !ActivationEngine.isInstalledPath($0.path) }
         guard !activatable.isEmpty else { return .installed }
 
+        // A variable alternate stands in for the family's static styles.
+        if faces.contains(where: { $0.isVariable && activeFaceIDs.contains($0.id) }) {
+            return .all
+        }
+
         let active = activatable.reduce(0) { count, face in
             count + (activeFaceIDs.contains(face.id) ? 1 : 0)
         }
         if active == 0 {
-            let available = activatable.filter {
-                faceActivationState($0) == .available
-            }
-            if available.isEmpty,
-               let owner = activatable.compactMap({ face -> String? in
-                   if case .blocked(let owner) = faceActivationState(face) {
-                       return owner
-                   }
-                   return nil
-               }).first {
-                return .blocked(ownerPath: owner)
-            }
             return .none
         }
         return active == activatable.count ? .all : .partial
+    }
+
+    /// Installed font that owns a preferred style's PostScript name. Cached when
+    /// the snapshot loads: rows read this during scroll, so it must not walk the
+    /// family again.
+    func systemConflictOwner(for family: CatalogFamily) -> String? {
+        systemConflictByFamily[family.id]
+    }
+
+    private static func systemConflictOwners(
+        in snapshot: CatalogSnapshot
+    ) -> [String: String] {
+        var owners: [String: String] = [:]
+        for family in snapshot.families {
+            let preferred = Set(family.preferredFaceIDs)
+            for face in snapshot.faces(in: family) where preferred.contains(face.id) {
+                guard !ActivationEngine.isInstalledPath(face.path) else { continue }
+                if let owner = snapshot.installedPostScriptOwners[
+                    face.postscriptName.lowercased()
+                ] {
+                    owners[family.id] = owner
+                    break
+                }
+            }
+        }
+        return owners
     }
 
     func faceActivationState(_ face: CatalogFace) -> FaceActivationState {
@@ -1430,11 +1438,15 @@ final class AppModel {
                family.preferredFaceIDs.contains($0.id)
                    && $0.styleKey == face.styleKey
            }) {
+            if face.isVariable {
+                return .variableAlternate(preferredPath: preferred.path)
+            }
             return .alternate(preferredPath: preferred.path)
         }
-        if let owner = activePostScriptOwners[face.postscriptName.lowercased()],
-           owner != face.path {
-            return .blocked(ownerPath: owner)
+        if let owner = snapshot.installedPostScriptOwners[
+            face.postscriptName.lowercased()
+        ] {
+            return .systemConflict(ownerPath: owner)
         }
         return .available
     }
@@ -1454,9 +1466,8 @@ final class AppModel {
         case .alternate(let preferredPath):
             status = "Alternate file; use \((preferredPath as NSString).lastPathComponent)"
             return
-        case .blocked(let owner):
-            status = "PostScript name is in use by \(owner)"
-            return
+        case .systemConflict, .variableAlternate:
+            break
         case .available, .active:
             break
         }
@@ -1465,7 +1476,32 @@ final class AppModel {
             path: face.path,
             postscriptName: face.postscriptName
         )
-        let activating = state == .available
+        let activating = state.canActivate
+        var deactivated = 0
+        if activating, case .variableAlternate = state,
+           let family = snapshot.family(id: face.familyKey) {
+            let activeFamilyFaces = snapshot.faces(in: family).filter {
+                $0.id != face.id && activeFaceIDs.contains($0.id)
+            }
+            if !activeFamilyFaces.isEmpty {
+                let deactivation = await activationEngine.deactivate(
+                    activeFamilyFaces.map {
+                        ActivationTarget(
+                            faceID: $0.id,
+                            path: $0.path,
+                            postscriptName: $0.postscriptName
+                        )
+                    }
+                )
+                deactivated = deactivation.deactivated
+                guard deactivation.failures.isEmpty else {
+                    refreshActive()
+                    status = deactivation.summary
+                    return
+                }
+                refreshActive()
+            }
+        }
         status = activating
             ? "Activating: \(face.style)…"
             : "Deactivating: \(face.style)…"
@@ -1473,7 +1509,12 @@ final class AppModel {
             ? await activationEngine.activate([target], scope: .user, source: "manual")
             : await activationEngine.deactivate([target])
         refreshActive()
-        status = outcome.summary.isEmpty ? "No change" : outcome.summary
+        if deactivated > 0, outcome.failures.isEmpty {
+            status = "Activated variable font; deactivated \(deactivated) static "
+                + "\(deactivated == 1 ? "style" : "styles")"
+        } else {
+            status = outcome.summary.isEmpty ? "No change" : outcome.summary
+        }
     }
 
     func revealInFinder(_ face: CatalogFace) {
@@ -1522,9 +1563,9 @@ final class AppModel {
             targetsFaces = faces.filter { activeFaceIDs.contains($0.id) }
         case .none, .partial:
             targetsFaces = activatable.filter {
-                faceActivationState($0) == .available
+                faceActivationState($0).canActivate
             }
-        case .installed, .missing, .cloud, .blocked:
+        case .installed, .missing, .cloud:
             return
         }
         guard !targetsFaces.isEmpty else {

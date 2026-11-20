@@ -67,6 +67,14 @@ public enum FontLocation {
     public static func isSystemFont(path: String) -> Bool {
         path.hasPrefix("/System/Library/Fonts/")
     }
+
+    /// Every standard Fonts folder. These files are installed, not ours to
+    /// register or unregister.
+    public static func isInstalledFont(path: String) -> Bool {
+        path.hasPrefix("/System/Library/Fonts/")
+            || path.hasPrefix("/Library/Fonts/")
+            || path.hasPrefix(NSHomeDirectory() + "/Library/Fonts/")
+    }
 }
 
 public enum FontKindFilter: String, Sendable, CaseIterable {
@@ -113,8 +121,8 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     /// Uniform row height uses it so a short user sample cannot clip a script
     /// preview. Zero when the representative face uses the user sample.
     public let scriptSampleLength: Int
-    /// True when sibling files report the same PostScript name, so only one of
-    /// them can be active at a time.
+    /// True when sibling files report the same PostScript name. The sheet warns
+    /// and activation is still allowed.
     public let hasDuplicatePostScriptNames: Bool
     /// Faces whose file is missing or unreadable. They remain in the snapshot
     /// so collections survive an offline volume.
@@ -182,6 +190,8 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
 public struct CatalogSnapshot: Sendable {
     public let faces: [CatalogFace]
     public let families: [CatalogFamily]
+    /// PostScript names owned by installed fonts. Lowercased key, first path.
+    public let installedPostScriptOwners: [String: String]
     private let faceIndexByID: [String: Int]
     private let familyIndexByID: [String: Int]
 
@@ -368,6 +378,15 @@ public struct CatalogSnapshot: Sendable {
             }
         }
 
+        var installedPostScriptOwners: [String: String] = [:]
+        for face in faces
+        where face.fileStatus == "ok" && FontLocation.isInstalledFont(path: face.path) {
+            let key = face.postscriptName.lowercased()
+            if installedPostScriptOwners[key] == nil {
+                installedPostScriptOwners[key] = face.path
+            }
+        }
+
         var faceIndexByID: [String: Int] = [:]
         faceIndexByID.reserveCapacity(faces.count)
         for (index, face) in faces.enumerated() {
@@ -381,6 +400,7 @@ public struct CatalogSnapshot: Sendable {
         return CatalogSnapshot(
             faces: faces,
             families: families,
+            installedPostScriptOwners: installedPostScriptOwners,
             faceIndexByID: faceIndexByID,
             familyIndexByID: familyIndexByID
         )

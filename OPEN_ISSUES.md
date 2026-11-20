@@ -304,8 +304,9 @@ features are listed too, so the gap is explicit rather than implied.
 
 - **Registration behavior.** Single, small and large batches, persistence across
   processes, double registration and duplicate PostScript behavior measured with
-  `scripts/register-spike.sh`. Still needs an external volume, a cloud-synced
-  folder, Font Book's view of a registered fixture, and a reboot.
+  `scripts/register-spike.sh` and the opt-in duplicate fixture test. Still needs
+  an external volume, a cloud-synced folder, Font Book's view of a registered
+  fixture, and a reboot.
 - **Real library.** The Dropbox folders are indexed and were split from the
   provider root without re-reading. Still needs a spot check of parsed names
   after the file-name fallback, and a timed full rescan per folder.
@@ -322,8 +323,11 @@ features are listed too, so the gap is explicit rather than implied.
   and marks the shared PostScript name. Never rewrite the font file.
 - **Duplicate file versions.** Under `wk13_exports`, `Referential Mono 0.970_1`
   shows its wk13 preview and checkbox; its missing FontBase copy is disabled as
-  missing; activating one version disables the other versions and names the
-  active path. The same rule applies across families.
+  missing; activating the preferred copy disables the same-style alternate.
+  Different styles that share a PostScript name can activate together.
+- **Duplicate PostScript styles.** Activate a family whose styles all share one
+  PostScript name; every preferred style must register and journal. An installed
+  font that owns the name stays an orange warning and remains activatable.
 - **Activation in the real app.** Click a library family, confirm another app
   sees the font, quit and relaunch, and confirm the dot and journal survive.
   No fontd integration test runs in CI.
@@ -485,8 +489,9 @@ features are listed too, so the gap is explicit rather than implied.
   keeping parsed data.
 - **Activation engine.** Actor with activate, deactivate and reconcile; success
   measured with `CTFontManagerGetScopeForURL`; every confirmed face journaled.
-- **Activation safety.** System Fonts folders are skipped and locked, duplicate
-  PostScript names are refused, and re-parse preserves the journal.
+- **Activation safety.** System Fonts folders are skipped and locked; library
+  files with duplicate PostScript names activate together; an installed
+  PostScript owner is an orange warning; re-parse preserves the journal.
 - **Activation UI.** Trailing activation square on rows and tiles with none,
   partial, all and installed states; click activates or deactivates the whole
   family.
@@ -508,6 +513,9 @@ features are listed too, so the gap is explicit rather than implied.
   touch only the changed paths.
 - **Font page.** Double-click or context menu opens a sheet with a large preview,
   style list with per-style activation, variable axes, info, reveal and copy.
+  Each style row has a context menu for Copy Filename, Copy PostScript Name,
+  Copy File Path and Reveal in Finder. The Info actions include Copy Family
+  Name.
 - **Variable preview.** Axis sliders rebuild the CTFont from a variation
   descriptor; preview updates live.
 - **Glyph map.** Character grid from `CTFontCopyCharacterSet`, search by
@@ -553,9 +561,13 @@ features are listed too, so the gap is explicit rather than implied.
   touched.
 - **Warnings.** Live duplicate PostScript names and missing files, grouped in
   collapsible disclosure sections, with right-click copy and reveal/copy-path.
-- **Per-file availability.** Duplicate PostScript versions show per-file
-  checkboxes; one active version disables the others and names the owner path.
-  Missing and installed files are distinct states.
+  Duplicate names are informational; activation is still allowed.
+- **Per-file availability.** Same-style static alternate copies stay disabled
+  and name the preferred file. Different styles that share a PostScript name
+  remain activatable; an installed font with the same name is marked orange.
+  A variable-file alternate is activatable: it deactivates the family's active
+  faces first and replaces the static styles with its named instances. Missing
+  and installed files are distinct states.
 - **No font fallback.** Previews draw primary runs normally and render fallback
   runs as the primary font's `.notdef`; script samples are selected from the
   drawn face's complete coverage, never a family-wide union.

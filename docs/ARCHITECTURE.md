@@ -90,9 +90,11 @@ Core directories:
 `ActivationEngine` is the only writer to fontd. It takes file URLs, registers
 scope `.user`, and reads the scope back before reporting success. Fonts already
 inside a standard Fonts folder are installed, not ours: the engine skips them,
-and the UI shows a locked state. Duplicate PostScript names are detected before
-activation and blocked in the UI with the owner path. Journal rows are reconciled
-against fontd at launch; reconcile never re-registers anything by itself.
+and the UI shows a locked state. Library files with duplicate PostScript names
+activate together; the UI warns in orange when an installed font already owns the
+name. A variable-file alternate is activatable: it replaces the family's static
+styles and exposes its named instances. Journal rows are reconciled against fontd
+at launch; reconcile never re-registers anything by itself.
 
 ## Preview
 

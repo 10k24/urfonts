@@ -148,10 +148,14 @@ struct FamilyDetailView: View {
             Text(hasDuplicatePostScriptName ? "Files" : "Styles")
                 .font(.headline)
             if hasDuplicatePostScriptName {
-                Text("More than one file in this family reports the same PostScript "
-                    + "name. Only one can be active at a time; the others are disabled.")
+                Text(Messages.FontPage.duplicatePostScripts)
                     .font(.caption)
                     .foregroundStyle(.orange)
+                if faces.contains(where: \.isVariable) {
+                    Text(Messages.FontPage.duplicatePostScriptsVariable)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
             VStack(spacing: 0) {
                 ForEach(faces) { face in
@@ -177,14 +181,21 @@ struct FamilyDetailView: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 4) {
                                     Text(face.style)
+                                    if face.isVariable {
+                                        Text("VF")
+                                            .font(.system(
+                                                size: PreviewMetrics.badgeFontSize,
+                                                weight: .semibold
+                                            ))
+                                            .padding(.horizontal, PreviewMetrics.badgeHorizontalPadding)
+                                            .padding(.vertical, PreviewMetrics.badgeVerticalPadding)
+                                            .background(.quaternary, in: Capsule())
+                                    }
                                     if duplicatePostScript {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .font(.system(size: 10))
                                             .foregroundStyle(.orange)
-                                            .help(
-                                                "Another file in this family uses the "
-                                                    + "same PostScript name"
-                                            )
+                                            .help(Messages.FontPage.duplicatePostScriptHelp)
                                     }
                                 }
                                 Text(duplicatePostScript ? fileName : face.postscriptName)
@@ -258,8 +269,8 @@ struct FamilyDetailView: View {
                             .padding(.leading, 32)
                         }
 
-                        if let owner = blockedOwner(of: state) {
-                            Text("In use by \(owner)")
+                        if let owner = systemConflictOwner(of: state) {
+                            Text(Messages.Activation.systemConflict(ownerPath: owner))
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
                                 .textSelection(.enabled)
@@ -269,6 +280,21 @@ struct FamilyDetailView: View {
                     }
                     .padding(.vertical, 10)
                     .padding(.horizontal, 12)
+                    .contextMenu {
+                        Button(Messages.FontPage.copyFilename) {
+                            copyToPasteboard(fileName)
+                        }
+                        Button(Messages.FontPage.copyPostScriptName) {
+                            copyToPasteboard(face.postscriptName)
+                        }
+                        Button(Messages.FontPage.copyFilePath) {
+                            copyToPasteboard(face.path)
+                        }
+                        Divider()
+                        Button(Messages.FontPage.revealInFinder) {
+                            model.revealInFinder(face)
+                        }
+                    }
                     if face.id != faces.last?.id {
                         Divider()
                     }
@@ -285,8 +311,13 @@ struct FamilyDetailView: View {
         return nil
     }
 
-    private func blockedOwner(of state: FaceActivationState) -> String? {
-        if case .blocked(let owner) = state {
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func systemConflictOwner(of state: FaceActivationState) -> String? {
+        if case .systemConflict(let owner) = state {
             return owner
         }
         return nil
@@ -366,10 +397,12 @@ struct FamilyDetailView: View {
             }
             HStack(spacing: 10) {
                 if let face = previewFace {
-                    Button("Reveal in Finder") { model.revealInFinder(face) }
-                    Button("Copy PostScript name") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(face.postscriptName, forType: .string)
+                    Button(Messages.FontPage.revealInFinder) { model.revealInFinder(face) }
+                    Button(Messages.FontPage.copyFamilyName) {
+                        copyToPasteboard(family.name)
+                    }
+                    Button(Messages.FontPage.copyPostScriptName) {
+                        copyToPasteboard(face.postscriptName)
                     }
                 }
             }

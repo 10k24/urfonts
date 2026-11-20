@@ -106,6 +106,31 @@ struct CatalogSnapshotTests {
         )
     }
 
+    @Test("installed fonts own their PostScript names")
+    func installedPostScriptOwners() {
+        let installed = face(
+            id: "installed",
+            family: "Test Family",
+            style: "Regular",
+            postscript: "TestFamily-Regular",
+            path: "/Library/Fonts/TestFamily-Regular.ttf"
+        )
+        let library = face(
+            id: "library",
+            family: "Test Family",
+            style: "Regular",
+            postscript: "TestFamily-Regular",
+            path: "/fonts/TestFamily-Regular.otf"
+        )
+
+        let snapshot = CatalogSnapshot.build(faces: [library, installed])
+
+        #expect(
+            snapshot.installedPostScriptOwners["testfamily-regular"]
+                == "/Library/Fonts/TestFamily-Regular.ttf"
+        )
+    }
+
     private func face(
         id: String,
         family: String,

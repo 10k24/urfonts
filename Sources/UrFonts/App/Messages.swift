@@ -212,6 +212,11 @@ enum Messages {
                 comment: "Activation help for a duplicate style file"
             )
         }
+        static let variableAlternate = String(
+            localized: "activation.variableAlternate",
+            defaultValue: "Variable font; replaces this family's static styles with all named instances",
+            comment: "Activation help for a variable font file"
+        )
         static let downloadAndActivate = String(
             localized: "activation.downloadAndActivate",
             defaultValue: "Download and activate",
@@ -228,13 +233,56 @@ enum Messages {
             comment: "Host unavailable"
         )
 
-        static func blocked(ownerPath: String) -> String {
+        static func systemConflict(ownerPath: String) -> String {
             String(
-                localized: "activation.blocked.owner",
-                defaultValue: "PostScript name already active from \(ownerPath)",
-                comment: "Activation help with owner"
+                localized: "activation.systemConflict",
+                defaultValue: "Installed font uses the same PostScript name: \(ownerPath)",
+                comment: "Activation warning when an installed font owns the name"
             )
         }
+    }
+
+    enum FontPage {
+        static let duplicatePostScripts = String(
+            localized: "fontPage.duplicatePostScripts",
+            defaultValue: "More than one file in this family reports the same PostScript name. Different styles can all be active; some apps may show only one. An installed font with the same name is marked orange.",
+            comment: "Font sheet duplicate PostScript warning"
+        )
+        static let duplicatePostScriptHelp = String(
+            localized: "fontPage.duplicatePostScriptHelp",
+            defaultValue: "Another file uses the same PostScript name; some apps may show only one style",
+            comment: "Per-file duplicate PostScript help"
+        )
+        static let duplicatePostScriptsVariable = String(
+            localized: "fontPage.duplicatePostScriptsVariable",
+            defaultValue: "Use the variable file instead of the static copies. Its named instances have distinct PostScript names, so apps can show each weight.",
+            comment: "Font sheet variable workaround"
+        )
+        static let copyFilename = String(
+            localized: "fontPage.copyFilename",
+            defaultValue: "Copy Filename",
+            comment: "Context menu copy filename"
+        )
+        static let copyFamilyName = String(
+            localized: "fontPage.copyFamilyName",
+            defaultValue: "Copy Family Name",
+            comment: "Font sheet copy family name"
+        )
+        static let copyPostScriptName = String(
+            localized: "fontPage.copyPostScriptName",
+            defaultValue: "Copy PostScript Name",
+            comment: "Context menu copy PostScript name"
+        )
+        static let copyFilePath = String(
+            localized: "fontPage.copyFilePath",
+            defaultValue: "Copy File Path",
+            comment: "Context menu copy full file path"
+        )
+        static let revealInFinder = String(
+            localized: "fontPage.revealInFinder",
+            defaultValue: "Reveal in Finder",
+            comment: "Context menu reveal file"
+        )
     }
 
     enum Rescan {
@@ -376,7 +424,7 @@ enum Messages {
         )
         static let activationBody = String(
             localized: "help.activation.body",
-            defaultValue: "The checkbox activates a family for the current user, globally. The font sheet lists every file and can activate one style. Installed fonts in system Fonts folders are locked. If two files share a PostScript name, only one can be active; the other is disabled. Apps usually refresh their font menus on launch, so activate first, then open the app.",
+            defaultValue: "The checkbox activates a family for the current user, globally. The font sheet lists every file and can activate one style. Installed fonts in system Fonts folders are locked. Files may share a PostScript name; all styles can be active, though some apps show only one. An installed font with the same PostScript name is marked orange. A variable file can replace the static styles and expose each named instance. Apps usually refresh their font menus on launch, so activate first, then open the app.",
             comment: "Help section"
         )
         static let previewTitle = String(
@@ -436,6 +484,16 @@ enum Messages {
             localized: "problems.duplicates",
             defaultValue: "Duplicate PostScript names",
             comment: "Warnings section"
+        )
+        static let duplicatesDetail = String(
+            localized: "problems.duplicates.detail",
+            defaultValue: "More than one file claims the same name; activation is still allowed",
+            comment: "Warnings duplicate detail"
+        )
+        static let duplicatesExplanation = String(
+            localized: "problems.duplicates.explanation",
+            defaultValue: "These files share a PostScript name. Activation is still allowed; some apps may show only one. Trial fonts with placeholder names such as \"false\" appear here too.",
+            comment: "Warnings duplicate explanation"
         )
         static let missing = String(
             localized: "problems.missing",

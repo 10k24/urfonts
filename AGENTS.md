@@ -46,10 +46,10 @@ These are the facts the design rests on. Verify before changing any of them.
   read-only rule.
 - Symlinking into `~/Library/Fonts` does not work. Registration is the only
   copy-free path.
-- Confirmation is observable: `CTFontManagerGetScopeForURL`,
-  `CTFontManagerCopyRegisteredFontDescriptors(.user, true)`, and the distributed
+- Confirmation is observable with `CTFontManagerGetScopeForURL` and the
   `kCTFontManagerRegisteredFontsChangedNotification`. Do not report success
-  before fontd reports the scope.
+  before fontd reports the scope. `CTFontManagerCopyRegisteredFontDescriptors` is
+  not available on macOS; do not use it.
 - Fonts already inside a standard Fonts folder are enabled and disabled with
   `CTFontManagerEnableFontDescriptors`, not registration. Never touch them unless
   the user explicitly opts in.
@@ -58,9 +58,10 @@ These are the facts the design rests on. Verify before changing any of them.
   matches; do not surface it as an error.
 - Duplicate PostScript names across different files are **not** reliably
   rejected. A second file with the same PostScript name registered cleanly in
-  the Phase 0 spike. fontd will not solve conflicts for us: detect them and warn
-  before activating both. The UI disables every non-active face whose PostScript
-  name is already active and names the active file path.
+  the Phase 0 spike. fontd will not solve conflicts for us. Activate every
+  requested library file anyway; duplicate names do not block. Warn only when an
+  installed font already owns the name. `CatalogSnapshot.installedPostScriptOwners`
+  is the system-owned set; the warning is a state, not a disabled control.
 - Registration is per-file: about 2 ms per font once warm, and the first call in
   a process pays a fontd start cost. Measure with `scripts/register-spike.sh`;
   do not copy numbers from here.
@@ -79,16 +80,26 @@ These are the facts the design rests on. Verify before changing any of them.
   `~/Library/Fonts` are installed, not ours, but only while the file exists.
   Check `fileStatus == "ok"` first: a missing FontBase copy must show as missing,
   not installed. Skip installed files in the engine and show a gray checked
-  square at the same size as the activation square; never unregister them.
+  square at the same size as the activation square; never unregister them. A
+  library file whose PostScript name an installed font already owns is marked
+  orange and remains activatable; it is a warning, not a block.
 - Toggling is family-level over unique styles, not files. Faces collapse by a
   style key (normalized style name, weight, width, italic). One preferred file
   per style is chosen deterministically: readable, then non-WEB, then OTF/OTC,
   then TTF, then path order. The family checkbox activates or deactivates every
-  preferred style. Alternate files stay in the sheet and are disabled as
+  preferred style. Static alternate files stay in the sheet and are disabled as
   alternates, never silently activated alongside the preferred file.
-- Duplicate PostScript names across different style groups still warn and block:
-  the sheet names the active owner path. A same-style OTF/TTF pair does not get
-  a family-level fallback; the preferred file is the one that activates.
+- A variable file that is an alternate of a static style stays activatable.
+  Activating it deactivates the family's active faces first, then registers the
+  variable file. It replaces the static styles for that family and lets fontd
+  expose the `fvar` named instances. This is the only way to get distinct
+  PostScript names when static siblings share one name.
+- Duplicate PostScript names across different style groups are allowed and
+  activate together; the sheet warns and the family row carries the warning.
+  The sheet points at a variable file when one can supply distinct named-instance
+  PostScript names. A same-style static OTF/TTF pair still has one preferred
+  file; the static alternate is disabled, never silently activated alongside the
+  preferred file.
 - Name tables that contain only placeholder identity (`false`, `none`, `null`,
   `undefined`, `untitled`, `nil`) are not faces. Fontshare WEB exports are the
   known case; filter them when building the snapshot so they cannot create a
@@ -220,6 +231,9 @@ These are the facts the design rests on. Verify before changing any of them.
 - Family detail lists every face's absolute path and marks a shared PostScript
   name with an orange triangle plus a note. Filenames are not identity: a
   mislabeled file still belongs to the family named in its `name` table.
+- SwiftUI presentations prevent app termination by default. Every sheet calls
+  `allowsAppTermination()` so Cmd+Q works on macOS 15.4+; older systems keep the
+  default. None of these sheets holds unsaved document state.
 - The glyph map comes from `CTFontCopyCharacterSet` over the face's own cmap,
   scanning code points up to U+2FFFF and skipping controls. Nothing is indexed;
   it runs when the sheet opens and works for inactive fonts.
@@ -349,10 +363,10 @@ These are the facts the design rests on. Verify before changing any of them.
   drop may contain folders and files.
 - The Warnings page reports live duplicate PostScript names and files whose
   status is not `ok`. Duplicates only count `ok` files; a missing duplicate is
-  noise. Warning types are collapsed `DisclosureGroup`s so the page reads as a
-  summary. Remove Missing Entries deletes only the stale rows, after
-  confirmation, because collection membership goes with them. No file on disk
-  is deleted or moved.
+  noise. Duplicate names are informational; activation is still allowed. Warning
+  types are collapsed `DisclosureGroup`s so the page reads as a summary. Remove
+  Missing Entries deletes only the stale rows, after confirmation, because
+  collection membership goes with them. No file on disk is deleted or moved.
 - System fonts are faces under `/System/Library/Fonts`. `/Library/Fonts` and
   `~/Library/Fonts` are user-installed, not system. The `showSystemFonts`
   setting (default on) hides a family only when every face is a system font.
@@ -685,6 +699,10 @@ Measured on the large fixture library. These are gates, not aspirations.
 - Never edit `todo.md`.
 - Use the edit tool for source edits, not shell text replacement.
 - Verify by execution. If a claim cannot be measured, say so instead of asserting.
+- After building the app, kill the running `UrFonts` process and relaunch
+  `build/UrFonts.app`. A running process keeps the old binary; UI checks against
+  a stale launch are false verification. If a sheet blocks a clean quit, use
+  `pkill -x UrFonts`.
 - If tests fail, fix them or record the failing case in `OPEN_ISSUES.md`. Do not
   proceed on a red gate.
 - Do not invent benchmark numbers.
@@ -720,8 +738,8 @@ Measured on the large fixture library. These are gates, not aspirations.
 
 - CoreText font registration:
   `CTFontManagerRegisterFontURLs`, `CTFontManagerUnregisterFontURLs`,
-  `CTFontManagerGetScopeForURL`, `CTFontManagerCopyRegisteredFontDescriptors`,
-  `CTFontManagerEnableFontDescriptors`, `CTFontManagerCreateFontDescriptorsFromURL`,
+  `CTFontManagerGetScopeForURL`, `CTFontManagerEnableFontDescriptors`,
+  `CTFontManagerCreateFontDescriptorsFromURL`,
   `kCTFontManagerRegisteredFontsChangedNotification`.
 - FSEvents: `FSEventStreamCreate` with `UseCFTypes | FileEvents | WatchRoot |
   NoDefer`, persisted `lastEventId`.

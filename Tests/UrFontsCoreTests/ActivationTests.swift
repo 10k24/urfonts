@@ -155,7 +155,7 @@ struct ActivationTests {
         #expect(registrar.registerCalls == 0)
     }
 
-    @Test("duplicate PostScript names are refused")
+    @Test("duplicate PostScript names activate together")
     func duplicates() async throws {
         let root = try makeLibrary(count: 8)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -172,8 +172,8 @@ struct ActivationTests {
             ActivationTarget(faceID: faces[1].id, path: faces[1].path, postscriptName: "Duplicate"),
         ]
         let outcome = await engine.activate(targets)
-        #expect(outcome.activated == 1)
-        #expect(outcome.failures.count == 1)
-        #expect(try database.activeFaceIDs().count == 1)
+        #expect(outcome.activated == 2)
+        #expect(outcome.failures.isEmpty)
+        #expect(try database.activeFaceIDs().count == 2)
     }
 }

@@ -50,13 +50,18 @@ struct FamilyDisplay: Identifiable, Equatable {
         self.warning = warning
     }
 
-    init(family: CatalogFamily) {
+    init(family: CatalogFamily, systemConflictOwner: String? = nil) {
         var reasons: [String] = []
         if family.hasDuplicatePostScriptNames {
             reasons.append("Multiple files share a PostScript name")
         }
         if family.missingFaceCount > 0 {
             reasons.append("\(family.missingFaceCount) file(s) missing")
+        }
+        if let systemConflictOwner {
+            reasons.append(Messages.Activation.systemConflict(
+                ownerPath: (systemConflictOwner as NSString).lastPathComponent
+            ))
         }
         self.init(
             id: family.id,

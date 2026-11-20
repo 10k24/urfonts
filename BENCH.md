@@ -11,7 +11,8 @@ code change.
 - Toolchain: Xcode 27.2, Swift 6.4.2
 - Build: `swift build -c release`
 - Real library: 24,901 fonts across 3,211 families, Dropbox folders
-  materialized locally
+  materialized locally. This is the library at measurement time; re-run before
+  comparing against the current library.
 
 ## Commands
 

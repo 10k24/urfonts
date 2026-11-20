@@ -41,6 +41,7 @@ struct ContentView: View {
                     showWelcome = false
                 }
             )
+            .allowsAppTermination()
         }
         .confirmationDialog(
             "Folder overlaps the library",

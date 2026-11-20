@@ -60,6 +60,7 @@ struct BrowserView: View {
         .toolbar { toolbar }
         .sheet(item: $detail) { family in
             FamilyDetailView(model: model, family: family)
+                .allowsAppTermination()
         }
         .alert("New Collection", isPresented: $showNewCollection) {
             TextField("Name", text: $newCollectionName)
@@ -122,7 +123,10 @@ struct BrowserView: View {
                         ForEach(model.visibleFamilies) { family in
                             let face = model.representativeFace(for: family)
                             FamilyRow(
-                                display: FamilyDisplay(family: family),
+                                display: FamilyDisplay(
+                                    family: family,
+                                    systemConflictOwner: model.systemConflictOwner(for: family)
+                                ),
                                 preview: face.map { PreviewSource(face: $0) },
                                 sampleText: face?.previewText(userText: model.sampleText)
                                     ?? model.sampleText,
@@ -155,7 +159,10 @@ struct BrowserView: View {
                         ForEach(model.visibleFamilies) { family in
                             let face = model.representativeFace(for: family)
                             FamilyTile(
-                                display: FamilyDisplay(family: family),
+                                display: FamilyDisplay(
+                                    family: family,
+                                    systemConflictOwner: model.systemConflictOwner(for: family)
+                                ),
                                 preview: face.map { PreviewSource(face: $0) },
                                 sampleText: face?.previewText(userText: model.sampleText)
                                     ?? model.sampleText,
