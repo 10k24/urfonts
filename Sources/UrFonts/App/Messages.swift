@@ -243,6 +243,21 @@ enum Messages {
     }
 
     enum FontPage {
+        static let previewFile = String(
+            localized: "fontPage.previewFile",
+            defaultValue: "Preview File",
+            comment: "Font sheet info heading"
+        )
+        static let previewFileNote = String(
+            localized: "fontPage.previewFileNote",
+            defaultValue: "The preview and the fields below describe this file. Every style above is a separate file.",
+            comment: "Font sheet preview file explanation"
+        )
+        static let style = String(
+            localized: "fontPage.style",
+            defaultValue: "Style",
+            comment: "Font sheet preview file style label"
+        )
         static let duplicatePostScripts = String(
             localized: "fontPage.duplicatePostScripts",
             defaultValue: "More than one file in this family reports the same PostScript name. Different styles can all be active; some apps may show only one. An installed font with the same name is marked orange.",

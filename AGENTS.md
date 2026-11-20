@@ -230,7 +230,9 @@ These are the facts the design rests on. Verify before changing any of them.
   dictionary.
 - Family detail lists every face's absolute path and marks a shared PostScript
   name with an orange triangle plus a note. Filenames are not identity: a
-  mislabeled file still belongs to the family named in its `name` table.
+  mislabeled file still belongs to the family named in its `name` table. The
+  header counts styles and distinct file paths; the info block is labeled
+  Preview File and describes one face, never the family as a whole.
 - SwiftUI presentations prevent app termination by default. Every sheet calls
   `allowsAppTermination()` so Cmd+Q works on macOS 15.4+; older systems keep the
   default. None of these sheets holds unsaved document state.

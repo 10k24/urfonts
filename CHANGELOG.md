@@ -44,6 +44,8 @@ versions may change behavior.
 - Font sheet style rows have a context menu for copying the filename, PostScript
   name or full path, and revealing the file in Finder. The Info actions include
   Copy Family Name.
+- The family sheet header shows style and distinct file counts, and Info is
+  labeled Preview File with the preview style named.
 - New UR mark app icon with a dark background, compiled into `Assets.car` and the
   legacy `.icns`.
 - CI gate covering tests, a Release build, fixtures, CLI round trip, headless

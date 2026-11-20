@@ -515,7 +515,8 @@ features are listed too, so the gap is explicit rather than implied.
   style list with per-style activation, variable axes, info, reveal and copy.
   Each style row has a context menu for Copy Filename, Copy PostScript Name,
   Copy File Path and Reveal in Finder. The Info actions include Copy Family
-  Name.
+  Name. The header shows style and file counts; Info is labeled Preview File and
+  names the preview style.
 - **Variable preview.** Axis sliders rebuild the CTFont from a variation
   descriptor; preview updates live.
 - **Glyph map.** Character grid from `CTFontCopyCharacterSet`, search by

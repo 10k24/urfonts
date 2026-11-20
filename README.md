@@ -30,8 +30,9 @@ published. Build from source with Xcode 26 or newer.
 - Font sheet with every style, per-style activation, absolute paths, variable
   axes, OpenType feature tags, glyph map and file info. Family counts match the
   styles the checkbox activates; same-style static duplicates are marked as
-  alternates. Right-click a style to copy its filename, PostScript name or path,
-  or reveal it in Finder. Info actions include Copy Family Name.
+  alternates. The sheet header shows style and file counts, and Info is labeled
+  Preview File. Right-click a style to copy its filename, PostScript name or
+  path, or reveal it in Finder. Info actions include Copy Family Name.
 - Collections, sorted alphabetically, with bulk activation. Saved preview
   samples with text, size and colors.
 - Warnings for duplicate PostScript names and missing files. Cleanup removes

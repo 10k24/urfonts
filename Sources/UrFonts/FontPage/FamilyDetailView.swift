@@ -103,7 +103,7 @@ struct FamilyDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(family.name)
                     .font(.title2.weight(.semibold))
-                Text(family.countLabel)
+                Text(headerCountLabel)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -114,6 +114,22 @@ struct FamilyDetailView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .background(.bar)
+    }
+
+    /// Distinct paths, not faces: a collection can hold several faces in one file.
+    private var fileCount: Int {
+        Set(faces.map(\.path)).count
+    }
+
+    private var headerCountLabel: String {
+        let styles = family.styleCount
+        let files = fileCount
+        var text = "\(styles) \(styles == 1 ? "style" : "styles") · "
+            + "\(files) \(files == 1 ? "file" : "files")"
+        if family.missingFaceCount > 0 {
+            text += " · \(family.missingFaceCount) missing"
+        }
+        return text
     }
 
     private var detailPreview: some View {
@@ -366,10 +382,18 @@ struct FamilyDetailView: View {
 
     private var info: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Info")
+            Text(Messages.FontPage.previewFile)
                 .font(.headline)
+            Text(Messages.FontPage.previewFileNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 if let face = previewFace {
+                    GridRow {
+                        Text(Messages.FontPage.style).foregroundStyle(.secondary)
+                        Text(face.style)
+                    }
                     GridRow {
                         Text("File").foregroundStyle(.secondary)
                         Text(face.path)
