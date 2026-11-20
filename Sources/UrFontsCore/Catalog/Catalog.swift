@@ -109,6 +109,10 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     public let searchBlob: Data
     public let hasVariableFace: Bool
     public let scriptMask: UInt64
+    /// Longest script sample the representative face can select, in characters.
+    /// Uniform row height uses it so a short user sample cannot clip a script
+    /// preview. Zero when the representative face uses the user sample.
+    public let scriptSampleLength: Int
     /// True when sibling files report the same PostScript name, so only one of
     /// them can be active at a time.
     public let hasDuplicatePostScriptNames: Bool
@@ -138,6 +142,15 @@ public struct CatalogFamily: Sendable, Identifiable, Equatable {
     /// preferred style files, readable, upright, weight closest to 400, then
     /// path. Activation state and sidebar selection are deliberately absent.
     public func representativeFace(in faces: ArraySlice<CatalogFace>) -> CatalogFace? {
+        Self.representativeFace(in: faces, preferredFaceIDs: preferredFaceIDs)
+    }
+
+    /// Same choice without an instance. The snapshot uses it to derive the
+    /// family's script sample length before the family exists.
+    static func representativeFace(
+        in faces: ArraySlice<CatalogFace>,
+        preferredFaceIDs: [String]
+    ) -> CatalogFace? {
         let readable = faces.filter { $0.fileStatus == "ok" }
         guard !readable.isEmpty else { return nil }
         let preferred = Set(preferredFaceIDs)
@@ -403,6 +416,13 @@ public struct CatalogSnapshot: Sendable {
         let familyFaces = Array(faces[range])
         let readable = familyFaces.filter { $0.fileStatus == "ok" }
         let scriptMask = readable.reduce(UInt64(0)) { $0 | $1.scriptMask }
+        let representative = CatalogFamily.representativeFace(
+            in: faces[range],
+            preferredFaceIDs: preferredFaceIDs
+        )
+        // The row draws the representative face, so its sample is the only one
+        // that can affect the uniform row height.
+        let scriptSampleLength = representative?.previewText(userText: "").count ?? 0
         let postscriptNames = Set(
             readable.map { $0.postscriptName.lowercased() }
         )
@@ -416,6 +436,7 @@ public struct CatalogSnapshot: Sendable {
             searchBlob: Data(parts.joined(separator: "\u{1}").utf8),
             hasVariableFace: readable.contains(where: \.isVariable),
             scriptMask: scriptMask,
+            scriptSampleLength: scriptSampleLength,
             hasDuplicatePostScriptNames: postscriptNames.count < readable.count,
             missingFaceCount: missingCount,
             styleCount: groups.count,

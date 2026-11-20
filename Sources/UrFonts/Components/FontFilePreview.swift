@@ -7,6 +7,7 @@ import UrFontsCore
 struct FontFilePreview: View {
     let path: String
     let faceIndex: Int
+    let postscriptName: String?
     let text: String
     let textColor: Color
     var size: CGFloat = 30
@@ -21,6 +22,7 @@ struct FontFilePreview: View {
     ) {
         self.path = face.path
         self.faceIndex = face.index
+        self.postscriptName = face.postscriptName
         self.text = text
         self.textColor = textColor
         self.size = size
@@ -29,12 +31,14 @@ struct FontFilePreview: View {
     init(
         path: String,
         faceIndex: Int = 0,
+        postscriptName: String? = nil,
         text: String,
         textColor: Color,
         size: CGFloat = 30
     ) {
         self.path = path
         self.faceIndex = faceIndex
+        self.postscriptName = postscriptName
         self.text = text
         self.textColor = textColor
         self.size = size
@@ -56,8 +60,12 @@ struct FontFilePreview: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: "\(path):\(faceIndex)") {
-            loaded = await FontLoader.shared.font(path: path, faceIndex: faceIndex)
+        .task(id: "\(path):\(faceIndex):\(postscriptName ?? "")") {
+            loaded = await FontLoader.shared.font(
+                path: path,
+                faceIndex: faceIndex,
+                postscriptName: postscriptName
+            )
         }
     }
 }

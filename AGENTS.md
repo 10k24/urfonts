@@ -99,15 +99,20 @@ These are the facts the design rests on. Verify before changing any of them.
   select a missing file for the row or sheet preview.
 - Preview never registers anything. `CTFontManagerCreateFontDescriptorsFromURL`
   plus `CTFontCreateWithFontDescriptor` is enough, and it is process-local.
-  Variable fonts return one descriptor per named instance, so dedupe descriptors;
-  register by URL, not by descriptor.
+  Variable fonts return one descriptor per named instance, so descriptors are
+  not faces. `FontLoader` resolves a catalog face by PostScript name; the SFNT
+  face index alone can select a named instance of the wrong face in a variable
+  font or collection. The index stays as a fallback for subset files with no
+  catalog face. Register by URL, not by descriptor.
 
 ### Performance
 
 - The browser is family-first. Tens of thousands of files collapse to a few
   thousand rows.
 - Rows have fixed height. Total content height is `count * rowHeight`. No
-  self-sizing rows, no layout pass per row.
+  self-sizing rows, no layout pass per row. The uniform height is estimated from
+  the longest preview text any visible row can draw, including a script sample
+  longer than the user's sample; otherwise a large size clips script previews.
 - One `CTLine` per row drawn into a SwiftUI `Canvas`. No TextKit, no
   `NSAttributedString`, no `Text` inside rows. Truncate with
   `CTLineCreateTruncatedLine`. Oversize the canvas to the glyph ink bounds so
@@ -131,12 +136,13 @@ These are the facts the design rests on. Verify before changing any of them.
 - The browser is `ScrollView` + `LazyVStack` with uniform rows. Base heights are
   128 pt normally, 176 pt for mid-length samples and 224 pt for the full alphabet
   preset (four lines). Above the base, the height is estimated from the measured
-  preview width and sample size: one line gets 8 pt of padding, wrapped lines get
-  12 pt, quantized to 8 pt steps. A single large line therefore does not carry a
-  second line's empty space. The line budget is 2 lines up to 48 characters and
-  4 above; it is not derived from the dynamic height. Each row has an `@State`
-  `LoadedFont`, loaded through `FontLoader.shared`. A row's `.task(id:)` keys on
-  path and face index only; size changes relayout but never reload the font.
+  preview width, sample size and the longest visible sample length: one line gets
+  8 pt of padding, wrapped lines get 12 pt, quantized to 8 pt steps. A single
+  large line therefore does not carry a second line's empty space. The line
+  budget is 2 lines up to 48 characters and 4 above; it is not derived from the
+  dynamic height. Each row has an `@State` `LoadedFont`, loaded through
+  `FontLoader.shared`. A row's `.task(id:)` keys on path, face index and
+  PostScript name only; size changes relayout but never reload the font.
 - List rows wrap with a typesetter and measure line ink bounds, so display faces
   with ink past their metrics do not overlap. Text space is y-up: a line's ink
   ascent is `bounds.maxY`, descent is `-bounds.minY`. Getting that backwards
@@ -232,8 +238,10 @@ These are the facts the design rests on. Verify before changing any of them.
   and `fvar`. `STAT` is planned. `cmap` coverage is a separate manual pass;
   GSUB/GPOS feature tags are read on demand. Language filters wait for a
   language-level coverage pass.
-- CoreText gives localized names and descriptors. The SFNT reader supplies
-  PANOSE, `fvar` axes and normalized metrics; nothing else yet.
+- CoreText descriptors are used for preview loading, not indexing.
+  `FontFileReader` remains a read-only inspection helper. The SFNT reader supplies
+  PANOSE, `fvar` axes and normalized metrics; names come from the `name` table;
+  nothing else yet.
 - Change detection is `path -> (inode, size, mtimeNanos, parseVersion, status)`.
   FSEvents gives a path, so a delta costs one `stat`, not a rescan.
 - Parse in parallel, bounded by `activeProcessorCount`, commit in one transaction.

@@ -104,6 +104,9 @@ final class AppModel {
         didSet { rebuildVisible() }
     }
     var visibleFamilies: [CatalogFamily] = []
+    /// Longest script sample across the visible families. Uniform rows must fit
+    /// it even when the user's sample is shorter.
+    private var visibleScriptSampleLength = 0
     var selectionFontCount = 0
     var visibleFontCount = 0
     var collections: [FontCollection] = []
@@ -293,6 +296,7 @@ final class AppModel {
         let rows: [CatalogFamily]
         let selectionFonts: Int
         let visibleFonts: Int
+        let scriptSampleLength: Int
     }
 
     /// The face set behind a sidebar selection. Family rows can include faces
@@ -1305,22 +1309,31 @@ final class AppModel {
     /// Lines a preset is allowed to use. Independent of the row height: a
     /// large short sample must not silently become a four-line row.
     var previewLineBudget: Int {
-        sampleText.count > 48 ? 4 : 2
+        effectivePreviewTextLength > 48 ? 4 : 2
     }
 
     var previewMaxLines: Int { previewLineBudget }
 
+    /// Longest preview text any visible row can draw. Rows are uniform, so a
+    /// short user sample must not set the height for a family that selects a
+    /// longer script sample.
+    private var effectivePreviewTextLength: Int {
+        max(sampleText.count, visibleScriptSampleLength)
+    }
+
     /// Uniform row height for the current sample and available preview width.
     ///
-    /// The line count is estimated from the width and the sample size, so a
+    /// The line count is estimated from the longest text a visible row can draw,
+    /// so script samples do not clip when the user's sample is shorter. A
     /// single-line preview does not carry a second line's padding when the
     /// slider grows. Multi-line previews keep their breathing room. Quantized to
     /// 8 pt so dragging the slider does not relayout on every tick.
     func previewRowHeight(previewWidth: CGFloat) -> CGFloat {
+        let textLength = effectivePreviewTextLength
         let base: CGFloat
-        if sampleText.count > 48 {
+        if textLength > 48 {
             base = 224
-        } else if sampleText.count > 28 {
+        } else if textLength > 28 {
             base = 176
         } else {
             base = 128
@@ -1332,7 +1345,7 @@ final class AppModel {
         let charactersPerLine = max(1, Int(previewWidth / (size * 0.65)))
         let estimatedLines = min(
             previewLineBudget,
-            max(1, Int(ceil(Double(sampleText.count) / Double(charactersPerLine))))
+            max(1, Int(ceil(Double(textLength) / Double(charactersPerLine))))
         )
         let lineHeight = size * 1.3
         let padding: CGFloat = estimatedLines > 1 ? 12 : 8
@@ -2234,6 +2247,7 @@ final class AppModel {
             if visibleFontCount != visibleCache.visibleFonts {
                 visibleFontCount = visibleCache.visibleFonts
             }
+            visibleScriptSampleLength = visibleCache.scriptSampleLength
             return
         }
 
@@ -2297,13 +2311,18 @@ final class AppModel {
             scope,
             familyIDs: Set(families.map(\.id))
         )
+        let scriptSampleLength = families.reduce(0) {
+            max($0, $1.scriptSampleLength)
+        }
         visibleCache = VisibleResult(
             key: key,
             rows: families,
             selectionFonts: selectionFonts,
-            visibleFonts: visibleFonts
+            visibleFonts: visibleFonts,
+            scriptSampleLength: scriptSampleLength
         )
         visibleFamilies = families
+        visibleScriptSampleLength = scriptSampleLength
         selectionFontCount = selectionFonts
         visibleFontCount = visibleFonts
     }

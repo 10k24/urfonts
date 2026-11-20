@@ -6,15 +6,21 @@ import UrFontsCore
 struct PreviewSource: Equatable {
     let path: String
     let faceIndex: Int
+    /// The face's PostScript name. CoreText returns one descriptor per named
+    /// variable instance, so the SFNT face index alone can select the wrong
+    /// face in a variable font or collection. Host subsets leave this nil.
+    let postscriptName: String?
 
-    init(path: String, faceIndex: Int = 0) {
+    init(path: String, faceIndex: Int = 0, postscriptName: String? = nil) {
         self.path = path
         self.faceIndex = faceIndex
+        self.postscriptName = postscriptName
     }
 
     init(face: CatalogFace) {
         self.path = face.path
         self.faceIndex = face.index
+        self.postscriptName = face.postscriptName
     }
 }
 

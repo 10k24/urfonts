@@ -148,7 +148,8 @@ struct GlyphMapView: View {
         .task(id: face.id) {
             guard let font = await FontLoader.shared.font(
                 path: face.path,
-                faceIndex: face.index
+                faceIndex: face.index,
+                postscriptName: face.postscriptName
             ) else { return }
             loaded = font
             scalars = Self.characters(in: font.ctFont)

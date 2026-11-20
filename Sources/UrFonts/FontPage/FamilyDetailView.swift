@@ -67,7 +67,7 @@ struct FamilyDetailView: View {
             loadDefaultAxes()
         }
         .task(id: previewFace?.id) {
-            loadFeatures()
+            await loadFeatures()
         }
     }
 
@@ -82,15 +82,20 @@ struct FamilyDetailView: View {
         }
     }
 
-    private func loadFeatures() {
+    private func loadFeatures() async {
         guard let face = previewFace else {
             features = []
             return
         }
-        features = (try? FontFileParser.featureTags(
-            url: URL(fileURLWithPath: face.path),
-            faceIndex: face.index
-        )) ?? []
+        let faceID = face.id
+        let tags = await Task.detached(priority: .userInitiated) {
+            (try? FontFileParser.featureTags(
+                url: URL(fileURLWithPath: face.path),
+                faceIndex: face.index
+            )) ?? []
+        }.value
+        guard previewFace?.id == faceID else { return }
+        features = tags
     }
 
     private var header: some View {
@@ -413,7 +418,11 @@ private struct DetailPreview: View {
         }
         .task(id: face?.id) {
             guard let face else { return }
-            loaded = await FontLoader.shared.font(path: face.path, faceIndex: face.index)
+            loaded = await FontLoader.shared.font(
+                path: face.path,
+                faceIndex: face.index,
+                postscriptName: face.postscriptName
+            )
         }
     }
 

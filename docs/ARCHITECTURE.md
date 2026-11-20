@@ -52,8 +52,9 @@ Core directories:
    skipped and counted; only files that were already indexed are marked
    `cloud`.
 3. Changed files are parsed off the main actor, bounded by the active processor
-   count. The main parse reads SFNT tables; CoreText supplies localized names and
-   descriptors.
+   count. The main parse reads SFNT tables, including the `name` table for
+   family, style and PostScript names. Preview loading uses CoreText descriptors
+   separately; it is not part of indexing.
 4. `LibraryDatabase` commits the batch in one transaction. A file already owned
    by another folder is moved rather than duplicated, and activation rows are
    preserved when a file is re-parsed.
@@ -95,13 +96,18 @@ against fontd at launch; reconcile never re-registers anything by itself.
 
 ## Preview
 
-`FontLoader` is an actor with a bounded LRU. It caches one `CTFont` per face, and
-derives point sizes with `CTFontCreateCopyWithAttributes` so moving the size
-slider never reopens a file. `PreviewLine` owns line breaking, truncation and
-vertical placement; the row caches that layout and the Canvas draws it. CoreText
-fallback runs are replaced with the primary font's `.notdef`, so previews never
-substitute another font. Activation controls and the VF badge share
-`PreviewMetrics.controlScale`.
+`FontLoader` is an actor with a bounded LRU. It resolves a catalog face by
+PostScript name, because CoreText reports one descriptor per named variable
+instance and the SFNT face index alone can select the wrong face; the face index
+is only a fallback for subset files with no catalog face. It caches one `CTFont`
+per face and derives point sizes with `CTFontCreateCopyWithAttributes` so moving
+the size slider never reopens a file. `PreviewLine` owns line breaking,
+truncation and vertical placement; the row caches that layout and the Canvas
+draws it. Sample text follows the face being drawn, never a family-wide mask
+union, and the uniform row height fits the longest script sample in the visible
+set. CoreText fallback runs are replaced with the primary font's `.notdef`, so
+previews never substitute another font. Activation controls and the VF badge
+share `PreviewMetrics.controlScale`.
 
 ## Search and filtering
 

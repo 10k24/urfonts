@@ -93,9 +93,16 @@ struct CatalogSnapshotTests {
 
         #expect(representative?.id == "otf")
         #expect(representative?.previewText(userText: "Sample") == "Sample")
+        #expect(family.scriptSampleLength == 0)
         #expect(
             installed.previewText(userText: "Sample")
                 == FontScript.devanagari.sampleText
+        )
+
+        let devanagariOnly = CatalogSnapshot.build(faces: [installed])
+        #expect(
+            devanagariOnly.families[0].scriptSampleLength
+                == FontScript.devanagari.sampleText.count
         )
     }
 

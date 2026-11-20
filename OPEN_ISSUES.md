@@ -340,7 +340,7 @@ features are listed too, so the gap is explicit rather than implied.
   disconnected/timeout check against a provider-backed folder.
 - **Coverage on the real library.** Index the full library and confirm the time
   is acceptable on the Dropbox-backed folders; check that script filters and
-  script-aware previews match the fonts, especially CJK and Arabic.
+  script-aware previews match the drawn faces, especially CJK and Arabic.
 - **Scroll isolation and smoothness.** Scroll each folder, switch away and back,
   and confirm it returns to its own top family. Scroll the full family list and
   a search result with a trackpad; `--headless scroll --rows` reports the
@@ -360,8 +360,9 @@ features are listed too, so the gap is explicit rather than implied.
   paths return.
 - **No font fallback.** Type Arabic or another unsupported string into a Latin
   font preview; missing characters show the font's `.notdef`, never GeezaPro or
-  another installed font. The Arabic auto-sample is not chosen unless the face
-  covers every sample character.
+  another installed font. The Arabic auto-sample is not chosen unless the drawn
+  face covers every sample character, including in a family that mixes a
+  Latin-only preferred file with a script-covering sibling.
 - **Text growth direction.** Drag the status bar size slider from small to
   large; text should grow downward (or symmetrically while it fits), never only
   upward. The slider stays accent blue while the window is active.
@@ -457,9 +458,12 @@ features are listed too, so the gap is explicit rather than implied.
   inside the budget.
 - **Browser shell.** Sidebar with All Fonts, Active, Hosts, folders, warnings,
   collections, toolbar search, list/grid toggle and filters.
-- **Rows and previews.** Uniform family rows whose height grows with the sample
-  size, fixed-height grid tiles, one `CTLine` per row in `Canvas`, `FontLoader`
-  LRU with process-local CTFonts, variable-font badge.
+- **Rows and previews.** Uniform family rows whose height fits the longest
+  visible sample, fixed-height grid tiles, one `CTLine` per row in `Canvas`,
+  `FontLoader` LRU with process-local CTFonts, variable-font badge.
+- **Preview face identity.** Catalog faces resolve through `FontLoader` by
+  PostScript name; a variable font or collection never previews or maps glyphs
+  from a named instance of another face.
 - **Preview settings.** Sample text, size, text color and background color,
   applied live to every row and tile.
 - **Browser snapshot.** `--headless browser` renders the real window offscreen,
@@ -553,8 +557,8 @@ features are listed too, so the gap is explicit rather than implied.
   checkboxes; one active version disables the others and names the owner path.
   Missing and installed files are distinct states.
 - **No font fallback.** Previews draw primary runs normally and render fallback
-  runs as the primary font's `.notdef`; script samples are selected only when
-  the complete sample is covered.
+  runs as the primary font's `.notdef`; script samples are selected from the
+  drawn face's complete coverage, never a family-wide union.
 - **System font visibility.** Show system fonts defaults on; the Filters toggle
   hides families whose faces all live under `/System/Library/Fonts`.
 - **System name display.** Apple's leading dot is stripped for display when the
@@ -564,19 +568,20 @@ features are listed too, so the gap is explicit rather than implied.
 - **Preview presets.** Alphabet, AaBbCcDdEeFf, pangram and numbers; selectable
   without changing size.
 - **Preview layout.** List rows wrap to two or four lines with ink-based line
-  spacing and grow with the size slider; grid tiles stay single-line, honor the
-  size, and truncate. Size slider lives in the status bar (12-108 pt) so it keeps
-  the accent tint. The 42 pt default sits at the visual midpoint: `PreviewSizeScale`
-  maps 12-42 to the lower half and 42-108 to the upper half, so a linear slider
-  never reads as if the default were the low end.
+  spacing and grow with the size slider and the longest script sample in the
+  visible set; grid tiles stay single-line, honor the size, and truncate. Size
+  slider lives in the status bar (12-108 pt) so it keeps the accent tint. The
+  42 pt default sits at the visual midpoint: `PreviewSizeScale` maps 12-42 to the
+  lower half and 42-108 to the upper half, so a linear slider never reads as if
+  the default were the low end.
 - **Appearance setting.** System default, Light and Dark, persisted as
   `urfonts.appearance` and applied through `NSApp.appearance`.
 - **Missing glyphs.** Preview rendering replaces CoreText fallback runs with the
   primary font's `.notdef`. The CoreText glyph test covers missing-character
   mapping; the headless render covers the drawn result.
-- **OpenType feature display.** GSUB/GPOS feature tags read per face and listed
-  on the font page with readable names; stylistic sets and character variants
-  numbered.
+- **OpenType feature display.** GSUB/GPOS feature tags read per face off the
+  main actor and listed on the font page with readable names; stylistic sets and
+  character variants numbered.
 - **Google Fonts provider.** Runtime catalog from the public metadata endpoint,
   TTF files from the official `google/fonts` repository, license copied, cache
   under Application Support, downloads indexed as a hidden managed folder.
@@ -598,5 +603,7 @@ features are listed too, so the gap is explicit rather than implied.
 - **Glyph sections.** The map has a Unicode section picker, search and SVG copy
   alongside character and code-point copy.
 - **Script-aware previews.** CJK, Hangul, Kana, Arabic, Hebrew, Devanagari and
-  Thai families preview in their own script once coverage is indexed; Latin and
-  Latin-plus-Greek/Cyrillic keep the user sample.
+  Thai faces preview in their own script once coverage is indexed. The sample
+  follows the face being drawn, so a mixed-coverage family uses each face's own
+  sample and never borrows a sibling's script. Latin and Latin-plus-Greek/Cyrillic
+  keep the user sample.

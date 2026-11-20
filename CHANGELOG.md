@@ -63,7 +63,6 @@ versions may change behavior.
   families or block family activation.
 - Activating a family no longer changes its row preview. Representative faces
   are chosen from files only, preferring the upright weight closest to 400.
-
 - Online-only cloud files are skipped without creating warning rows; previously
   indexed files that become online-only remain visible as unavailable.
 - Network, timeout and offline failures show a retryable message instead of a
@@ -73,3 +72,9 @@ versions may change behavior.
 - Preview rows no longer reload a font when only the point size changes.
 - Family previews no longer show tofu when a sibling file covers a script the
   preview file does not. Sample text follows the face being drawn.
+- Variable fonts and collections resolve previews and glyph maps by PostScript
+  name. A system collection face no longer shows a named instance of another
+  face, including Devanagari rendering as Bangla or tofu.
+- Uniform list row height accounts for script samples. A short user sample no
+  longer clips Hangul, Devanagari and other script previews at large sizes.
+- OpenType feature tags are read off the main actor when the family sheet opens.

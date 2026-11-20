@@ -338,7 +338,8 @@ struct FamilyRow: View, Equatable {
             guard let preview else { return }
             loaded = await FontLoader.shared.font(
                 path: preview.path,
-                faceIndex: preview.faceIndex
+                faceIndex: preview.faceIndex,
+                postscriptName: preview.postscriptName
             )
             updateLayout()
         }
@@ -417,13 +418,14 @@ struct FamilyRow: View, Equatable {
     /// Size is deliberately not part of the key: it changes per slider tick and
     /// must not reload the face or blank the preview.
     private var loadKey: String {
-        "\(preview?.path ?? ""):\(preview?.faceIndex ?? 0)"
+        "\(preview?.path ?? ""):\(preview?.faceIndex ?? 0):\(preview?.postscriptName ?? "")"
     }
 
     /// Everything that changes the preview line breaks or vertical placement.
     private struct LayoutKey: Equatable {
         let path: String
         let faceIndex: Int
+        let postscriptName: String?
         let text: String
         let size: Double
         let maxLines: Int
@@ -435,6 +437,7 @@ struct FamilyRow: View, Equatable {
         LayoutKey(
             path: preview?.path ?? "",
             faceIndex: preview?.faceIndex ?? 0,
+            postscriptName: preview?.postscriptName,
             text: sampleText,
             size: sampleSize,
             maxLines: maxLines,
@@ -537,13 +540,14 @@ struct FamilyTile: View, Equatable {
             guard let preview else { return }
             loaded = await FontLoader.shared.font(
                 path: preview.path,
-                faceIndex: preview.faceIndex
+                faceIndex: preview.faceIndex,
+                postscriptName: preview.postscriptName
             )
         }
     }
 
     private var loadKey: String {
-        "\(preview?.path ?? ""):\(preview?.faceIndex ?? 0)"
+        "\(preview?.path ?? ""):\(preview?.faceIndex ?? 0):\(preview?.postscriptName ?? "")"
     }
 
     static func == (left: FamilyTile, right: FamilyTile) -> Bool {
